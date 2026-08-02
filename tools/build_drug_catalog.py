@@ -34,9 +34,24 @@ ANVISA_CSV = "https://dados.anvisa.gov.br/dados/DADOS_ABERTOS_MEDICAMENTOS.csv"
 sys.path.insert(0, os.path.join(HERE, ".."))
 from app.drugs import _norm, ALIASES  # noqa: E402
 
-_SSL = ssl.create_default_context()
-_SSL.check_hostname = False
-_SSL.verify_mode = ssl.CERT_NONE
+# ANVISA sirve una cadena incompleta (falta un intermedio) que Python ssl no
+# puede resolver por sí solo (schannel de Windows sí). truststore inyecta el
+# almacén de CAs del sistema en ssl y conserva la verificación TLS completa.
+# Fallback: certifi (bundle Mozilla). Nunca se desactiva la verificación.
+def _ssl_context() -> ssl.SSLContext:
+    try:
+        import truststore
+        truststore.inject_into_ssl()
+    except ImportError:
+        try:
+            import certifi
+            return ssl.create_default_context(cafile=certifi.where())
+        except ImportError:
+            pass
+    return ssl.create_default_context()
+
+
+_SSL = _ssl_context()
 
 # prefijos/sufijos de sal para obtener la base del principio activo
 SALT_LEAD = re.compile(
