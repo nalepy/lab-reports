@@ -300,7 +300,11 @@ function renderPerson() {
     <div class="card-body">
       ${d.reports.map((r) => `
         <div class="report-item">
-          <div class="r-lab">${esc(r.lab)} ${r.order_code ? "· Orden " + esc(r.order_code) : ""}</div>
+          <div class="r-top">
+            <div class="r-lab">${esc(r.lab)} ${r.order_code ? "· Orden " + esc(r.order_code) : ""}</div>
+            <a class="r-download" href="/api/report/${r.id}/file" target="_blank" rel="noopener"
+               title="Descargar PDF original">⬇️ PDF</a>
+          </div>
           <div class="r-date">${fmtDate(r.date)} · ${esc(r.source_file)}</div>
           <div class="r-sections">${esc(r.sections || "")}</div>
         </div>`).join("")}

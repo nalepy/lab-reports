@@ -466,6 +466,11 @@ class DB:
             (pid,)).fetchone()
         return r["at"] if r and r["at"] else None
 
+    def report(self, rid: int) -> dict | None:
+        r = self.conn.execute(
+            "SELECT * FROM reports WHERE id=?", (rid,)).fetchone()
+        return dict(r) if r else None
+
     def reports_for(self, pid: int) -> list[dict]:
         rows = self.conn.execute(
             """SELECT r.*, GROUP_CONCAT(DISTINCT s.section) AS sections

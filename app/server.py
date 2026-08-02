@@ -243,6 +243,20 @@ def report_detail(pid: int, rid: int):
     return {"report_id": rid, "tests": rows}
 
 
+@app.get("/api/report/{rid}/file")
+def report_file(rid: int):
+    """Sirve el PDF original ingerido de un informe de laboratorio."""
+    r = db.report(rid)
+    if not r:
+        return JSONResponse({"error": "Informe no encontrado"}, status_code=404)
+    path = db.resolve_path(r["stored_path"])
+    if not os.path.exists(path):
+        return JSONResponse({"error": "Archivo no disponible en disco"},
+                            status_code=404)
+    fname = r.get("source_file") or os.path.basename(path)
+    return FileResponse(path, media_type="application/pdf", filename=fname)
+
+
 @app.post("/api/person/{pid}/meds")
 def add_med(pid: int, med: MedIn):
     if not med.name.strip():
