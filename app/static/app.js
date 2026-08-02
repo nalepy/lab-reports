@@ -116,19 +116,22 @@ async function selectPerson(id) {
 
 /* ---------------- rescan ---------------- */
 
-async function rescanFolder() {
-  const btn = $("#btnRescan");
-  btn.disabled = true;
-  btn.textContent = "⏳ Escaneando…";
-  $("#scanResult").textContent = "";
+async function rescanFolder(silent = false) {
+  if (!silent) {
+    const btn = $("#btnRescan");
+    btn.disabled = true;
+    btn.textContent = "⏳ Escaneando…";
+    $("#scanResult").textContent = "";
+  }
   try {
     const r = await api("/api/rescan", { method: "POST" });
     const dupMsg = r.duplicates_removed ? ` · ${r.duplicates_removed} duplicado(s) eliminado(s)` : "";
     const errMsg = r.errors && r.errors.length ? ` · ⚠️ ${r.errors.length} error(es)` : "";
-    $("#scanResult").textContent =
-      `${r.checked} archivo(s) revisado(s) · ${r.new_reports} nuevo(s)${dupMsg}${errMsg}`;
+    const msg = `${r.checked} archivo(s) revisado(s) · ${r.new_reports} nuevo(s)${dupMsg}${errMsg}`;
+    $("#scanResult").textContent = msg;
+    if (silent) return;
     if (r.new_reports > 0) {
-      toast(`${r.new_reports} informe(s) nuevo(s) ingerido(s) ✅`, "green");
+      toast(`${r.new_reports} informe(s) nuevo(s) ingerido(s)`, "green");
     } else if (r.errors && r.errors.length) {
       toast("Errores: " + r.errors[0], "yellow");
     } else {
@@ -140,10 +143,13 @@ async function rescanFolder() {
       renderPerson();
     }
   } catch (e) {
-    toast("Error al escanear: " + e.message, "red");
+    if (!silent) toast("Error al escanear: " + e.message, "red");
   } finally {
-    btn.disabled = false;
-    btn.textContent = "🔄 Buscar archivos nuevos";
+    if (!silent) {
+      const btn = $("#btnRescan");
+      btn.disabled = false;
+      btn.textContent = "🔄 Buscar archivos nuevos";
+    }
   }
 }
 
@@ -586,6 +592,13 @@ function drawChart(canvasId, key, pts) {
 
 /* ---------------- tablas ---------------- */
 
+function lastReportAge(m) {
+  if (!m.last_date) return false;
+  const d = new Date(m.last_date);
+  const now = new Date();
+  return (now - d) / (365.25 * 24 * 3600 * 1000) > 1;  // más de 1 año
+}
+
 function monthKey(dateStr) {
   if (!dateStr) return "";
   const d = new Date(dateStr);
@@ -604,14 +617,19 @@ function renderTables(d) {
   const series = state.detail.assessment.series || {};
 
   // ---- tabla 1: últimos resultados vs referencia ----
-  const t1rows = tests.filter((m) => m.value != null).map((m) => `
+  const t1rows = tests.filter((m) => m.value != null).map((m) => {
+    const lastDate = m.last_date ? monthLabel(monthKey(m.last_date)) : "";
+    const isAged = m.last_date && lastReportAge(m);
+    const ageIcon = isAged ? ' <span class="aged-icon" title="Resultado de hace mas de 12 meses">⏳</span>' : "";
+    return `
     <tr>
-      <td>${esc(m.label)}</td>
+      <td>${esc(m.label)} ${lastDate ? `<span style="color:var(--muted);font-size:11px">(${lastDate})</span>` : ""}${ageIcon}</td>
       <td class="num ${m.status === "alto" ? "val-abnormal-H" : m.status === "bajo" ? "val-abnormal-L" : ""}">${fmtNum(m.value, m.unit)}</td>
       <td class="num">${m.ref_low != null ? fmtNum(m.ref_low, "") : ""}${m.ref_low != null && m.ref_high != null ? " – " : ""}${m.ref_high != null ? fmtNum(m.ref_high, "") : ""}</td>
       <td>${m.status === "normal" ? '<span class="flag-N">Normal</span>' : m.status === "alto" ? '<span class="flag-H">Alto</span>' : m.status === "bajo" ? '<span class="flag-L">Bajo</span>' : '<span style="color:#999">—</span>'}</td>
       <td>${trendIcon(m)}</td>
-    </tr>`).join("");
+    </tr>`;
+  }).join("");
 
   // ---- tabla 2: evolución por mes/año ----
   // agrupar todas las mediciones por (análisis, mes/año); última del mes
@@ -919,6 +937,8 @@ async function doLogout() {
 
 document.addEventListener("DOMContentLoaded", () => {
   loadPersons();
+  // escaneo en segundo plano al iniciar (no bloquea navegación)
+  setTimeout(() => rescanFolder(false), 500);
   // refresco automático de estado cada 60s
   setInterval(() => {
     api("/api/status").then((st) => {
