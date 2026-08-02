@@ -610,10 +610,16 @@ def document_zip(doc_id: int):
                 rel = os.path.relpath(full, root)
                 z.write(full, rel)
     fname = os.path.splitext(doc["orig_filename"])[0] or "estudio"
+    # sanitizar para evitar inyección de cabeceras (CRLF) y comillas/fugas
+    safe = re.sub(r'[\r\n"\\]', "_", fname) or "estudio"
+    ascii_name = safe.encode("ascii", "replace").decode("ascii") or "estudio"
+    utf8_quoted = urllib.parse.quote(f"{safe}.zip")
     return Response(
         buf.getvalue(),
         media_type="application/zip",
-        headers={"Content-Disposition": f'attachment; filename="{fname}.zip"'},
+        headers={"Content-Disposition":
+                 f'attachment; filename="{ascii_name}.zip"; '
+                 f"filename*=UTF-8''{utf8_quoted}"},
     )
 
 
