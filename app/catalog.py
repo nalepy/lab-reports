@@ -72,7 +72,7 @@ def search(q: str, limit: int = 12) -> list[dict]:
         else:
             tier = 4
         has_dose = bool(e.get("strengths"))
-        scored.append((tier, 0 if has_dose else 1, e["_gen"], {
+        scored.append((0 if has_dose else 1, tier, e["_gen"], {
             "generic": e.get("generic", ""),
             "brands": e.get("brands", []),
             "strengths": e.get("strengths", []),
@@ -80,6 +80,7 @@ def search(q: str, limit: int = 12) -> list[dict]:
             "key": e.get("key"),
             "matched_brand": matched_brand,
         }))
-    # calidad de coincidencia > con dosis primero > alfabético
+    # con dosis primero (el usuario quiere la dosis), luego calidad de
+    # coincidencia, luego alfabético
     scored.sort(key=lambda t: (t[0], t[1], t[2]))
     return [item for _, _, _, item in scored[:limit]]

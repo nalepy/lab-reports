@@ -277,6 +277,65 @@ def main():
             e["brands"].add(b)
         e["_cima"] = x["strengths"]  # dosis verificadas de ficha
 
+    # 4.5) marcas y dosis por país (vademecum.es/uy + mivademecum ar/cl/py/uy)
+    for _f in sorted(os.listdir(HERE)):
+        if not (_f.startswith("mv_") or _f == "uy_extra.json"):
+            continue
+        try:
+            src = json.load(open(os.path.join(HERE, _f), encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            continue
+        added = 0
+        # índice genérico normalizado -> clave, para match O(1) (el loop por
+        # cada medicamento x cada entrada es demasiado lento con +20k medicinas)
+        gen_index = {}
+        for cand, e in cat.items():
+            ng = _norm(e.get("generic", ""))
+            if len(ng) >= 3:
+                gen_index.setdefault(ng, cand)
+        _gen_list = sorted(gen_index.items(), key=lambda kv: -len(kv[0]))
+        for m in src.get("medicines", []):
+            name = (m.get("name") or "").strip()
+            gk = _norm(name)
+            if not gk or len(gk) < 3:
+                continue
+            strengths = m.get("dose") or []
+            base = _norm(name)
+            # buscar la entrada del catálogo cuyo genérico es prefijo del
+            # nombre (p. ej. "metformina x mg" -> metformina); el más largo gana
+            target = gen_index.get(base)
+            if target is None:
+                for ng, cand in _gen_list:
+                    if ng in base:
+                        target = cand
+                        break
+            # la marca es el nombre base sin dosis ni formas (p. ej. "Baclof 10
+            # mg comprimido" -> "Baclof")
+            brand = re.sub(r"\b\d+(?:[.,]\d+)?(?:\s*/\s*\d+)?\s*"
+                           r"(mg|mcg|g|ui|ml|%|microgramos|miligramos|gramos|"
+                           r"unidades)\b", " ", name, flags=re.I)
+            brand = re.sub(r"\b(comprimido|c[aá]psula|tableta|jarabe|soluci[oó]n|"
+                           r"inyectable|crema|gel|suspensi[oó]n|recubierto|"
+                           r"masticable|efervescente|gastrorresistente|nasal|"
+                           r"oft[aá]lmico|d[ée]rmico|para|polvo|suspensi[oó]n|"
+                           r"gastrorresistente|bucodispersable|recubierto)\b",
+                           " ", brand, flags=re.I)
+            brand = re.sub(r"\s+", " ", brand).strip(" -")
+            # sin coincidencia de genérico: crear entrada propia (clave única)
+            if target is None:
+                target = gk
+            e = cat.setdefault(
+                target, {"generic": (brand.title() if brand else name.title()),
+                         "brands": set(), "strengths": {},
+                         "key": ALIASES.get(gk), "_aliases": set()})
+            e["_aliases"].add(gk)
+            if len(brand) >= 2:
+                e["brands"].add(brand.title() if brand.islower() else brand)
+            for s in strengths:
+                e["strengths"][s] = ("mg", 0)  # orden aproximado
+            added += 1
+        print(f"  país {_f}: {added} medicamentos fusionados", flush=True)
+
     # 5) materializar
     def sort_strengths(d):
         return [k for k, _ in sorted(d.items(), key=lambda kv: (kv[1][0], kv[1][1]))]
@@ -284,7 +343,8 @@ def main():
     catalog = []
     for gk, e in cat.items():
         strengths = e.get("_cima") or sort_strengths(e["strengths"])
-        aliases = sorted(e.get("_aliases", {gk}) | {gk})
+        aliases = sorted({a for a in (e.get("_aliases") or set()) | {gk}
+                          if isinstance(a, str) and a})
         catalog.append({
             "key": e["key"],
             "generic": e["generic"],
