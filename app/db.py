@@ -569,6 +569,32 @@ class DB:
         self.conn.commit()
         return cur.lastrowid
 
+    def delete_person(self, pid: int, to_pid: int | None = None) -> None:
+        """Elimina un paciente.
+
+        Si to_pid está presente, sus archivos (documentos, informes+análisis,
+        medicamentos, informes IA) se reasignan a ese paciente. Si no, se
+        eliminan en cascada junto con el paciente.
+        """
+        with self._lock:
+            if to_pid:
+                for table in ("documents", "reports", "meds", "ai_reports"):
+                    self.conn.execute(
+                        f"UPDATE {table} SET person_id=? WHERE person_id=?",
+                        (to_pid, pid))
+            else:
+                rids = [r["id"] for r in self.conn.execute(
+                    "SELECT id FROM reports WHERE person_id=?", (pid,))]
+                for rid in rids:
+                    self.conn.execute("DELETE FROM tests WHERE report_id=?", (rid,))
+                self.conn.execute("DELETE FROM reports WHERE person_id=?", (pid,))
+                self.conn.execute("DELETE FROM documents WHERE person_id=?", (pid,))
+                self.conn.execute("DELETE FROM meds WHERE person_id=?", (pid,))
+                self.conn.execute("DELETE FROM ai_reports WHERE person_id=?", (pid,))
+            self.conn.execute("DELETE FROM person_docs WHERE person_id=?", (pid,))
+            self.conn.execute("DELETE FROM persons WHERE id=?", (pid,))
+            self.conn.commit()
+
     def last_ai_report_at(self, pid: int) -> str | None:
         r = self.conn.execute(
             "SELECT MAX(generated_at) AS at FROM ai_reports WHERE person_id=?",

@@ -29,6 +29,7 @@ from . import drugs as drugs_mod
 from . import catalog
 from . import ai_engine
 from . import auth
+from .parser import parse_pdf
 
 HERE = Path(__file__).resolve().parent
 STATIC = HERE / "static"
@@ -333,6 +334,118 @@ def person_metrics(pid: int, m: MetricsIn):
     db.update_person_metrics(pid, m.birth_date, m.weight_kg, m.height_cm,
                              m.bp, m.hr, m.notes)
     return {"ok": True, "person": db.person(pid)}
+
+
+# ------------------------------------------------------------------ eliminar paciente
+
+class PersonDeleteIn(BaseModel):
+    mode: str          # delete_all | transfer | transfer_new
+    to_pid: int | None = None
+    name: str = ""
+    doc: str = ""
+    sex: str = ""
+    age: str = ""
+
+
+@app.post("/api/person/{pid}/delete")
+def delete_person(pid: int, d: PersonDeleteIn):
+    """Elimina un paciente.
+
+    - delete_all: borra el paciente y todos sus archivos.
+    - transfer: reasigna sus archivos a otro paciente (to_pid).
+    - transfer_new: crea un paciente nuevo y le reasigna los archivos.
+    """
+    p = db.person(pid)
+    if not p:
+        return JSONResponse({"error": "Persona no encontrada"}, status_code=404)
+    to_pid = None
+    if d.mode == "transfer":
+        if not d.to_pid or d.to_pid == pid:
+            return JSONResponse(
+                {"error": "Elija otro paciente de destino"},
+                status_code=400)
+        if not db.person(d.to_pid):
+            return JSONResponse(
+                {"error": "Paciente de destino no encontrado"},
+                status_code=404)
+        to_pid = d.to_pid
+    elif d.mode == "transfer_new":
+        if not d.name.strip():
+            return JSONResponse(
+                {"error": "Indique el nombre del paciente nuevo"},
+                status_code=400)
+        try:
+            to_pid = db.add_person(d.name, d.doc, d.sex, d.age)
+        except ValueError as e:
+            return JSONResponse({"error": str(e)}, status_code=400)
+    elif d.mode != "delete_all":
+        return JSONResponse({"error": "Modo inválido"}, status_code=400)
+    db.delete_person(pid, to_pid)
+    return {"ok": True, "deleted": pid, "to_pid": to_pid}
+
+
+@app.get("/api/person/{pid}/suggest-target")
+def suggest_target(pid: int):
+    """Busca a qué paciente REAL pertenecen los archivos de este registro
+    (p. ej. una empresa de laboratorio), analizando los PDFs: por documento
+    (C.I.) o por nombre del paciente detectado."""
+    p = db.person(pid)
+    if not p:
+        return JSONResponse({"error": "Persona no encontrada"}, status_code=404)
+    candidates: list[dict] = []
+    seen: set[int] = set()
+    for r in db.reports_for(pid):
+        path = db.resolve_path(r["stored_path"])
+        if not os.path.exists(path):
+            continue
+        try:
+            parsed = parse_pdf(path)
+        except Exception:  # noqa: BLE001
+            parsed = []
+        for pr in parsed:
+            tgt = None
+            how = ""
+            if pr.doc:
+                tgt = db._person_by_doc(pr.doc)
+                how = "documento"
+            if not tgt and pr.patient_name:
+                tgt = db._fuzzy_person(pr.patient_name, pr.doc or "")
+                how = "nombre"
+            if tgt and tgt["id"] != pid and tgt["id"] not in seen:
+                seen.add(tgt["id"])
+                candidates.append(
+                    {"id": tgt["id"], "name": tgt["name"], "match": how})
+        # fallback: escaneo del texto crudo (formatos no parseados, ej. cultivos)
+        _suggest_from_raw_text(path, pid, candidates, seen)
+    return {"source": {"id": pid, "name": p["name"]},
+            "candidates": candidates[:5]}
+
+
+def _suggest_from_raw_text(path: str, pid: int,
+                           candidates: list[dict], seen: set[int]) -> None:
+    """Escanea el texto plano del PDF buscando C.I. y nombres en mayúsculas
+    que coincidan con pacientes existentes."""
+    try:
+        import fitz
+        with fitz.open(path) as doc:
+            text = "\n".join(pg.get_text() for pg in doc)
+    except Exception:  # noqa: BLE001
+        return
+    # documento: número de 6-8 dígitos (C.I.)
+    for m in re.finditer(r"\b(\d{6,8})\b", text):
+        tgt = db._person_by_doc(m.group(1))
+        if tgt and tgt["id"] != pid and tgt["id"] not in seen:
+            seen.add(tgt["id"])
+            candidates.append(
+                {"id": tgt["id"], "name": tgt["name"], "match": "documento"})
+    # nombre: secuencia de palabras en MAYÚSCULAS (máx 6 palabras)
+    for m in re.finditer(
+            r"\b([A-ZÁÉÍÓÚÑ]{2,}(?:\s+[A-ZÁÉÍÓÚÑ]{2,}){1,5})\b", text):
+        tgt = db._fuzzy_person(m.group(1), "")
+        if tgt and tgt["id"] != pid and tgt["id"] not in seen:
+            seen.add(tgt["id"])
+            candidates.append(
+                {"id": tgt["id"], "name": tgt["name"], "match": "nombre"})
 
 
 _AI_BG_LOCK = threading.Lock()

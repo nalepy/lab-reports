@@ -963,3 +963,23 @@ td .trend-flat { color: var(--muted); }
   #printRoot ul { margin: 6px 0 6px 20px; }
   #printRoot .ai-report-body { font-size: 13px; }
 }
+
+/* ============================================================
+   ELIMINAR PACIENTE — opciones
+   ============================================================ */
+.del-options { display: flex; flex-direction: column; gap: 8px; }
+.del-options label {
+  display: flex; align-items: flex-start; gap: 8px;
+  padding: 9px 10px; border: 1px solid var(--line);
+  border-radius: 8px; cursor: pointer; font-size: 13.5px;
+}
+.del-options label:hover { background: var(--surface-2, #f2f5f7); }
+.del-options input[type="radio"] { margin-top: 2px; }
+.del-options select, .del-options input[type="text"] {
+  width: 100%; padding: 8px 10px; border: 1px solid var(--line);
+  border-radius: 8px; font-size: 13px; font-family: inherit;
+  background: var(--surface); margin-top: 4px;
+}
+.del-options select:focus, .del-options input:focus {
+  outline: 2px solid var(--red, #d32f2f); border-color: transparent;
+}

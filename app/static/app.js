@@ -187,6 +187,9 @@ function renderPerson() {
       </div>
       <div class="severity-strip">${sevChips}</div>
     </div>
+    <div class="header-actions">
+      <button class="sev-chip sev-red" onclick="openDeletePerson()" title="Eliminar este paciente">🗑 Eliminar</button>
+    </div>
   </div>
 
   <div class="metrics-bar">
@@ -1207,6 +1210,97 @@ async function doLogout() {
 }
 
 /* ---------------- init ---------------- */
+
+/* ---------------- eliminar paciente ---------------- */
+
+function openDeletePerson() {
+  const p = state.detail ? state.detail.person : null;
+  if (!p) return;
+  const nDocs = (state.detail.documents || []).length;
+  $("#delInfo").innerHTML =
+    `<p>Se eliminará <b>${esc(p.name)}</b> (${p.n_reports} informe(s), ${nDocs} archivo(s) adjuntos).</p>` +
+    `<p style="margin-top:6px;font-weight:600">¿Qué hacer con sus archivos?</p>`;
+  document.querySelectorAll('input[name="delMode"]').forEach((r) =>
+    r.checked = (r.value === "delete_all"));
+  delModeChanged();
+  const sel = $("#delTarget");
+  sel.innerHTML = `<option value="">— Seleccione paciente —</option>` +
+    state.persons.filter((x) => x.id !== state.current)
+      .map((x) => `<option value="${x.id}">${esc(x.name)}</option>`).join("");
+  $("#delNewName").value = "";
+  $("#delNewDoc").value = "";
+  $("#delMsg").innerHTML = "";
+  $("#delModal").style.display = "flex";
+  // sugerir automáticamente el paciente real al que pertenecen los archivos
+  fetch(`/api/person/${state.current}/suggest-target`)
+    .then((r) => r.json())
+    .then((d) => {
+      if (d.candidates && d.candidates.length) {
+        const c0 = d.candidates[0];
+        if (sel.querySelector(`option[value="${c0.id}"]`)) {
+          sel.value = c0.id;
+          $("#delMsg").innerHTML =
+            `<span style="color:#2e7d32">📎 Sugerencia: los archivos parecen de <b>${esc(c0.name)}</b> (coincidencia por ${c0.match}).</span>`;
+        }
+      }
+    })
+    .catch(() => {});
+}
+
+function delModeChanged() {
+  const mode = document.querySelector('input[name="delMode"]:checked').value;
+  $("#delTarget").style.display = mode === "transfer" ? "" : "none";
+  $("#delNewFields").style.display = mode === "transfer_new" ? "" : "none";
+}
+
+function closeDeletePerson() {
+  $("#delModal").style.display = "none";
+  $("#delMsg").innerHTML = "";
+}
+
+async function confirmDeletePerson() {
+  const mode = document.querySelector('input[name="delMode"]:checked').value;
+  if (mode === "delete_all" &&
+      !confirm("¿Eliminar TODOS los archivos de este paciente? No se puede deshacer.")) {
+    return;
+  }
+  const body = { mode };
+  if (mode === "transfer") {
+    const t = $("#delTarget").value;
+    if (!t) {
+      $("#delMsg").innerHTML = `<span style="color:#d32f2f">Elija el paciente de destino.</span>`;
+      return;
+    }
+    body.to_pid = parseInt(t, 10);
+  }
+  if (mode === "transfer_new") {
+    body.name = $("#delNewName").value.trim();
+    body.doc = $("#delNewDoc").value.trim();
+    if (!body.name) {
+      $("#delMsg").innerHTML = `<span style="color:#d32f2f">Escriba el nombre del paciente nuevo.</span>`;
+      return;
+    }
+  }
+  const res = await fetch(`/api/person/${state.current}/delete`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  const data = await res.json();
+  if (!res.ok) {
+    $("#delMsg").innerHTML = `<span style="color:#d32f2f">${esc(data.error || "Error")}</span>`;
+    return;
+  }
+  closeDeletePerson();
+  toast("Paciente eliminado", "green");
+  state.current = null;
+  state.detail = null;
+  const panel = $("#personPanel");
+  if (panel) {
+    panel.innerHTML = `<div style="text-align:center;padding:40px;color:var(--muted)"><h2>Seleccione una persona</h2></div>`;
+  }
+  await loadPersons();
+}
 
 /* ---------------- informes IA en segundo plano ---------------- */
 
