@@ -181,6 +181,11 @@ def _build_prompt(person, assessment, meds, reports) -> list[dict]:
     vitals_lines = "\n".join(vitals) or "- Sin datos vitales registrados"
 
     notes_txt = str(person.get("notes") or "").strip()
+    notes_block = ""
+    if notes_txt:
+        notes_block = ("INFORMACIÓN MÉDICA ADICIONAL REFERIDA POR EL PACIENTE "
+                       "(alergias, enfermedades crónicas, antecedentes, otros):\n"
+                       + notes_txt)
 
     system_prompt = """Eres un médico analista senior y directo. Tu tarea es redactar
 un INFORME CLÍNICO PERSONALIZADO en español para un paciente, a partir de sus
@@ -212,7 +217,7 @@ INFORMES ANALIZADOS: {n_reports} ({first_date} → {last_date})
 
 DATOS VITALES DEL PACIENTE:
 {vitals_lines}
-{('INFORMACIÓN MÉDICA ADICIONAL REFERIDA POR EL PACIENTE (alergias, enfermedades crónicas, antecedentes, otros):\n' + notes_txt) if notes_txt else ''}
+{notes_block}
 
 ESTADO ACTUAL DE BIOMARCADORES (solo última medición):
 {chr(10).join(markers)}
