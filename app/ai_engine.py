@@ -12,7 +12,6 @@ posteriores.
 """
 import json
 import os
-import threading
 import urllib.request
 import urllib.error
 
@@ -43,9 +42,6 @@ MODELS = {
         "id": "anthropic/claude-opus-4.8",
     },
 }
-
-_lock = threading.Lock()
-_cache = {}  # (person_id, model) -> {"report", "ts"}
 
 
 class AIError(Exception):
@@ -194,17 +190,21 @@ Redacta el informe final completo en español."""
 
 
 def generate_report(person, assessment, meds, reports, model_key="deepseek",
-                    force=False) -> dict:
-    """Genera (o devuelve en caché) el informe IA de una persona.
-
-    Si OpenRouter falla (key inválida, sin conexión), devuelve un informe
-    estructurado generado localmente para que la función nunca quede en
-    blanco.
-    """
-    with _lock:
-        cached = _cache.get((person["id"], model_key))
-        if cached and not force:
-            return cached
+                    force=False, db=None) -> dict:
+    """Genera (o carga desde DB) el informe IA de una persona."""
+    pid = person["id"]
+    # si no se fuerza regeneración, devolver el guardado
+    if not force and db is not None:
+        saved = db.load_ai_report(pid, model_key)
+        if saved:
+            return {
+                "model": saved["model_label"],
+                "model_key": saved["model_key"],
+                "content": saved["content"],
+                "generated_at": saved["generated_at"],
+                "fallback": False,
+                "saved": True,
+            }
     try:
         messages = _build_prompt(person, assessment, meds, reports)
         content = _call_openrouter(MODELS[model_key]["id"], messages)
@@ -214,18 +214,34 @@ def generate_report(person, assessment, meds, reports, model_key="deepseek",
             "content": content,
             "generated_at": __import__("datetime").datetime.now().isoformat(),
             "fallback": False,
+            "saved": False,
         }
+        # persistir en DB
+        if db is not None:
+            db.save_ai_report(pid, model_key, report["model"], content)
     except AIError as e:
+        # en caso de error, si hay uno guardado, usarlo
+        if db is not None:
+            saved = db.load_ai_report(pid, model_key)
+            if saved:
+                return {
+                    "model": saved["model_label"],
+                    "model_key": saved["model_key"],
+                    "content": saved["content"],
+                    "generated_at": saved["generated_at"],
+                    "fallback": True,
+                    "saved": True,
+                    "fallback_reason": str(e),
+                }
         report = {
             "model": "Local (sin conexión a IA)",
             "model_key": model_key,
             "content": _fallback_report(person, assessment, meds, reports),
             "generated_at": __import__("datetime").datetime.now().isoformat(),
             "fallback": True,
+            "saved": False,
             "fallback_reason": str(e),
         }
-    with _lock:
-        _cache[(person["id"], model_key)] = report
     return report
 
 

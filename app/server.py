@@ -269,7 +269,8 @@ def ai_report(pid: int, model: str = "deepseek", force: bool = False):
     assessment = build_assessment(p, tests, meds)
     try:
         report = ai_engine.generate_report(p, assessment, meds, reports,
-                                           model_key=model, force=force)
+                                           model_key=model, force=force,
+                                           db=db)
         return report
     except ai_engine.AIError as e:
         return JSONResponse({"error": str(e)}, status_code=502)

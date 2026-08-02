@@ -116,6 +116,15 @@ CREATE TABLE IF NOT EXISTS documents (
     uploaded_at TEXT DEFAULT (datetime('now')),
     FOREIGN KEY(person_id) REFERENCES persons(id)
 );
+CREATE TABLE IF NOT EXISTS ai_reports (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    person_id INTEGER,
+    model_key TEXT DEFAULT 'deepseek',
+    model_label TEXT DEFAULT '',
+    content TEXT DEFAULT '',
+    generated_at TEXT DEFAULT (datetime('now')),
+    UNIQUE(person_id, model_key)
+);
 CREATE TABLE IF NOT EXISTS files (
     path TEXT PRIMARY KEY,
     sha1 TEXT,
@@ -487,3 +496,20 @@ class DB:
             "DELETE FROM documents WHERE id=? AND person_id=?", (doc_id, pid))
         self.conn.commit()
         return cur.rowcount > 0
+
+    # ------------------------------------------------------------- ai reports
+
+    def save_ai_report(self, pid: int, model_key: str, model_label: str,
+                       content: str):
+        self.conn.execute(
+            """INSERT OR REPLACE INTO ai_reports(person_id, model_key,
+               model_label, content, generated_at)
+               VALUES(?,?,?,?,datetime('now'))""",
+            (pid, model_key, model_label, content))
+        self.conn.commit()
+
+    def load_ai_report(self, pid: int, model_key: str) -> dict | None:
+        r = self.conn.execute(
+            "SELECT * FROM ai_reports WHERE person_id=? AND model_key=?",
+            (pid, model_key)).fetchone()
+        return dict(r) if r else None
