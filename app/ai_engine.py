@@ -149,8 +149,9 @@ def _build_prompt(person, assessment, meds, reports) -> list[dict]:
         for r in assessment["recommendations"][:12])
 
     n_reports = len(reports)
-    first_date = reports[0]["date"][:10] if reports else "?"
-    last_date = reports[-1]["date"][:10] if reports else "?"
+    # el 'date' puede ser NULL (informe subido sin fecha parseable)
+    first_date = (reports[0]["date"] or "")[:10] if reports else "?"
+    last_date = (reports[-1]["date"] or "")[:10] if reports else "?"
 
     system_prompt = """Eres un médico analista senior y directo. Tu tarea es redactar
 un INFORME CLÍNICO PERSONALIZADO en español para un paciente, a partir de sus
