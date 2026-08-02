@@ -4,6 +4,7 @@ import os
 import re
 import sqlite3
 import hashlib
+import json
 import threading
 from datetime import datetime
 from pathlib import Path
@@ -206,6 +207,27 @@ CREATE TABLE IF NOT EXISTS files (
     mtime REAL,
     ingested_at TEXT DEFAULT (datetime('now'))
 );
+CREATE TABLE IF NOT EXISTS pending_reports (
+    key TEXT PRIMARY KEY,
+    stored_path TEXT,
+    fname TEXT,
+    patient_raw TEXT,
+    patient_name TEXT,
+    doc TEXT,
+    lab TEXT,
+    date TEXT,
+    date_text TEXT,
+    order_code TEXT,
+    doctor TEXT,
+    age INTEGER,
+    sex TEXT,
+    notes TEXT DEFAULT '',
+    is_document INTEGER DEFAULT 0,
+    size INTEGER DEFAULT 0,
+    study_date TEXT DEFAULT '',
+    sections_json TEXT,
+    created_at TEXT DEFAULT (datetime('now'))
+);
 CREATE INDEX IF NOT EXISTS idx_reports_person ON reports(person_id);
 CREATE INDEX IF NOT EXISTS idx_reports_date ON reports(date);
 CREATE INDEX IF NOT EXISTS idx_tests_report ON tests(report_id);
@@ -380,35 +402,43 @@ class DB:
     def _get_or_create_person(self, report) -> int:
         return self._get_or_create_person2(report)[0]
 
-    def _get_or_create_person2(self, report) -> tuple[int, bool]:
-        """Resuelve/crea la persona de un informe. Devuelve (id, creada_ahora)."""
+    def _match_person(self, report):
+        """Resuelve el paciente de un informe SIN crearlo. None si es nuevo."""
         p = self._person_by_doc(report.doc)
         if p is None:
             p = self._fuzzy_person(report.patient_name, report.doc)
-        if p is not None:
-            # update missing metadata + register doc alias
-            upd = {}
-            if report.sex and not p["sex"]:
-                upd["sex"] = report.sex
-            if report.age and not p["age"]:
-                upd["age"] = report.age
-            if upd:
-                sets = ", ".join(f"{k}=?" for k in upd)
+        return p
+
+    def _merge_person_meta(self, p, report):
+        """Completa datos que faltan (sexo/edad) y registra el doc como alias."""
+        upd = {}
+        if report.sex and not p["sex"]:
+            upd["sex"] = report.sex
+        if report.age and not p["age"]:
+            upd["age"] = report.age
+        if upd:
+            sets = ", ".join(f"{k}=?" for k in upd)
+            self.conn.execute(
+                f"UPDATE persons SET {sets} WHERE id=?",
+                (*upd.values(), p["id"]))
+        if report.doc and report.doc != p["doc"]:
+            # register alias so future files match
+            try:
                 self.conn.execute(
-                    f"UPDATE persons SET {sets} WHERE id=?",
-                    (*upd.values(), p["id"]))
-            if report.doc and report.doc != p["doc"]:
-                # register alias so future files match
-                try:
-                    self.conn.execute(
-                        "INSERT OR IGNORE INTO person_docs(person_id, doc) "
-                        "VALUES(?,?)", (p["id"], report.doc))
-                except sqlite3.IntegrityError:
-                    pass
-                if not p["doc"]:
-                    self.conn.execute(
-                        "UPDATE persons SET doc=? WHERE id=?",
-                        (report.doc, p["id"]))
+                    "INSERT OR IGNORE INTO person_docs(person_id, doc) "
+                    "VALUES(?,?)", (p["id"], report.doc))
+            except sqlite3.IntegrityError:
+                pass
+            if not p["doc"]:
+                self.conn.execute(
+                    "UPDATE persons SET doc=? WHERE id=?",
+                    (report.doc, p["id"]))
+
+    def _get_or_create_person2(self, report) -> tuple[int, bool]:
+        """Resuelve/crea la persona de un informe. Devuelve (id, creada_ahora)."""
+        p = self._match_person(report)
+        if p is not None:
+            self._merge_person_meta(p, report)
             self.conn.commit()
             return p["id"], False
         cur = self.conn.execute(
@@ -471,6 +501,122 @@ class DB:
                 return _relative_path(path)
         return _relative_path(dest)
 
+    def _save_pending(self, key, fname, stored_rel, r, size, study_date):
+        """Guarda un informe con paciente no reconocido para confirmación."""
+        self.conn.execute(
+            """INSERT OR REPLACE INTO pending_reports(
+                   key, stored_path, fname, patient_raw, patient_name, doc,
+                   lab, date, date_text, order_code, doctor, age, sex, notes,
+                   is_document, size, study_date, sections_json)
+               VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+            (key, stored_rel, fname, r.patient_raw, r.patient_name, r.doc,
+             r.lab, r.date, r.date_text, r.order_code, r.doctor, r.age, r.sex,
+             r.notes, 1 if r.is_document else 0, size, study_date,
+             json.dumps(r.sections, ensure_ascii=False)))
+
+    def _insert_report_rows(self, pid, fname, stored_rel, file_hash, lab,
+                            date, date_text, order_code, doctor, age, sex,
+                            notes, is_document, sections):
+        """Inserta el informe y sus tests. Devuelve el id del informe."""
+        cur = self.conn.execute(
+            """INSERT INTO reports(person_id, source_file, stored_path,
+                   file_hash, lab, date, date_text, order_code, doctor,
+                   age, sex, notes, is_document)
+               VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+            (pid, fname, stored_rel, file_hash, lab, date, date_text,
+             order_code, doctor, age, sex, notes, 1 if is_document else 0))
+        rid = cur.lastrowid
+        for s in sections:
+            for t in s["tests"]:
+                self.conn.execute(
+                    """INSERT INTO tests(report_id, section, name, canonical,
+                           value, raw_result, unit, ref_low, ref_high,
+                           ref_text, flag, qual, method)
+                       VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                    (rid, s["name"], t["name"], t["canonical"], t["value"],
+                     t["raw_result"], t["unit"], t["ref_low"], t["ref_high"],
+                     t["ref_text"], t["flag"], t["qual"], t["method"]))
+        return rid
+
+    def resolve_pending(self, key: str, action: str, target_pid: int = None,
+                        name: str = "") -> dict:
+        """Resuelve un informe pendiente tras confirmación del usuario.
+
+        - approve:  crear persona con el nombre inferido
+        - rename:   crear persona con el nombre corregido
+        - existing: vincular a target_pid (paciente ya existente)
+        - current:  vincular a target_pid (pestaña donde se subió)
+        - cancel:   descartar informe y borrar la copia de la biblioteca
+        """
+        row = self.conn.execute(
+            "SELECT * FROM pending_reports WHERE key=?", (key,)).fetchone()
+        if not row:
+            return {"ok": False, "status": "not_found",
+                    "error": "Informe pendiente no encontrado (¿ya resuelto?)."}
+        if action == "cancel":
+            abs_path = _absolute_path(row["stored_path"])
+            if os.path.exists(abs_path):
+                try:
+                    os.remove(abs_path)
+                except OSError:
+                    pass
+            self.conn.execute(
+                "DELETE FROM pending_reports WHERE key=?", (key,))
+            self.conn.commit()
+            return {"ok": True, "status": "cancelled", "file": row["fname"]}
+        try:
+            sections = json.loads(row["sections_json"] or "[]")
+        except ValueError:
+            sections = []
+        pid = target_pid
+        created = False
+        if action in ("approve", "rename"):
+            pname = (name or row["patient_name"] or "DESCONOCIDO").strip()
+            if not pname:
+                pname = "DESCONOCIDO"
+            cur = self.conn.execute(
+                "INSERT INTO persons(name, doc, sex, age) VALUES(?,?,?,?)",
+                (pname, row["doc"], row["sex"], row["age"]))
+            pid = cur.lastrowid
+            created = True
+            if row["doc"]:
+                try:
+                    self.conn.execute(
+                        "INSERT OR IGNORE INTO person_docs(person_id, doc) "
+                        "VALUES(?,?)", (pid, row["doc"]))
+                except sqlite3.IntegrityError:
+                    pass
+        if not pid:
+            return {"ok": False, "status": "error",
+                    "error": "Debe indicar el paciente destino."}
+        self._insert_report_rows(pid, row["fname"], row["stored_path"], key,
+                                 row["lab"], row["date"], row["date_text"],
+                                 row["order_code"], row["doctor"], row["age"],
+                                 row["sex"], row["notes"], row["is_document"],
+                                 sections)
+        abs_path = _absolute_path(row["stored_path"])
+        if os.path.exists(abs_path):
+            with open(abs_path, "rb") as f:
+                raw = f.read()
+            self._upsert_file(abs_path, hashlib.sha1(raw).hexdigest(),
+                              row["size"] or len(raw),
+                              os.path.getmtime(abs_path))
+        else:
+            self._upsert_file(abs_path, "", row["size"] or 0, 0)
+        self.add_document(pid, row["fname"], row["stored_path"], "pdf",
+                          row["size"] or 0,
+                          "Informe de laboratorio ingerido (confirmado).",
+                          study_date=row["study_date"] or "")
+        self.conn.execute(
+            "DELETE FROM pending_reports WHERE key=?", (key,))
+        self.conn.commit()
+        nm = self.conn.execute(
+            "SELECT name FROM persons WHERE id=?", (pid,)).fetchone()
+        return {"ok": True, "status": action, "pid": pid,
+                "created": created,
+                "person_name": nm["name"] if nm else "",
+                "new_reports": 1, "file": row["fname"]}
+
     def _ingest_locked(self, path: str, force: bool, library_dir: str) -> dict:
         fname = os.path.basename(path)
         try:
@@ -510,41 +656,43 @@ class DB:
         new_count = 0
         person_ids: set[int] = set()
         created_any = False
+        pending: list[dict] = []
         for r in reports:
             if not r.patient_name:
                 continue
-            if self.report_exists(file_hash=sha + f"|{r.lab}|{r.date}"):
+            key = sha + f"|{r.lab}|{r.date}"
+            if self.report_exists(file_hash=key):
                 continue
             # dedupe by same person+date+lab (e.g. ORD61211 vs 61211)
-            pid, created = self._get_or_create_person2(r)
+            p = self._match_person(r)
+            if p is None:
+                # paciente desconocido: NO crear todavía — pedir confirmación
+                self._save_pending(key, fname, stored_rel, r, size, study_date)
+                pending.append({
+                    "key": key, "file": fname, "patient": r.patient_name,
+                    "doc": r.doc or "", "lab": r.lab, "date": r.date,
+                })
+                continue
+            self._merge_person_meta(p, r)
+            pid = p["id"]
             person_ids.add(pid)
-            created_any = created_any or created
             dup_report = self.conn.execute(
                 "SELECT id FROM reports WHERE person_id=? AND date=? AND lab=?",
                 (pid, r.date, r.lab)).fetchone()
             if dup_report and not force:
                 continue
-            cur = self.conn.execute(
-                """INSERT INTO reports(person_id, source_file, stored_path,
-                       file_hash, lab, date, date_text, order_code, doctor,
-                       age, sex, notes, is_document)
-                   VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)""",
-                (pid, fname, stored_rel, sha + f"|{r.lab}|{r.date}", r.lab,
-                 r.date, r.date_text, r.order_code, r.doctor, r.age, r.sex,
-                 r.notes, 1 if r.is_document else 0))
-            rid = cur.lastrowid
-            for s in r.sections:
-                for t in s["tests"]:
-                    self.conn.execute(
-                        """INSERT INTO tests(report_id, section, name, canonical,
-                               value, raw_result, unit, ref_low, ref_high,
-                               ref_text, flag, qual, method)
-                           VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)""",
-                        (rid, s["name"], t["name"], t["canonical"], t["value"],
-                         t["raw_result"], t["unit"], t["ref_low"], t["ref_high"],
-                         t["ref_text"], t["flag"], t["qual"], t["method"]))
+            self._insert_report_rows(pid, fname, stored_rel, key, r.lab,
+                                     r.date, r.date_text, r.order_code,
+                                     r.doctor, r.age, r.sex, r.notes,
+                                     r.is_document, r.sections)
             new_count += 1
         self.conn.commit()
+        if pending:
+            # los informes confirmados de este archivo ya quedaron; el resto
+            # espera decisión del usuario (no se registra el archivo aún)
+            return {"ok": True, "file": fname, "status": "pending",
+                    "pending": pending, "new_reports": new_count,
+                    "study_date": study_date}
         self._upsert_file(path, sha, size, mtime)
         # Vincular también como documento adjunto descargable (pestaña del
         # paciente). La vía de subida web ya lo hace; la ingesta directa

@@ -11,6 +11,8 @@ const state = {
   _tab: "resumen",
 };
 
+let _pendingQueue = [];   // informes con paciente no reconocido (confirmación)
+
 const $ = (sel) => document.querySelector(sel);
 
 /* ---------------- helpers ---------------- */
@@ -138,6 +140,100 @@ async function createPatient(ev) {
     msg.innerHTML = `<span style="color:#d32f2f">${esc(e.message)}</span>`;
   }
   return false;
+}
+
+/* ---------------- confirmación paciente no reconocido ---------------- */
+
+function _showNextPending() {
+  if (!_pendingQueue.length) { $("#pendingModal").style.display = "none"; return; }
+  openPendingModal(_pendingQueue[0]);
+}
+
+function openPendingModal(item) {
+  const meta = [];
+  if (item.lab) meta.push(`Lab: <b>${esc(item.lab)}</b>`);
+  if (item.date) meta.push(`Fecha: <b>${fmtDMY(item.date)}</b>`);
+  if (item.doc) meta.push(`Doc: <b>${esc(item.doc)}</b>`);
+  $("#pendingInfo").innerHTML = `
+    <div style="margin-bottom:8px">El informe <b>${esc(item.file)}</b> parece de un paciente que no existe todavía:</div>
+    <div style="background:var(--bg, #f5f5f5);padding:10px;border-radius:8px;margin-bottom:8px">
+      <div style="font-size:15px;font-weight:700">${esc(item.patient)}</div>
+      <div style="font-size:12px;color:var(--muted)">${meta.join(" · ") || "sin más datos"}</div>
+    </div>`;
+  const sel = $("#pendTarget");
+  sel.innerHTML = state.persons
+    .filter((p) => p.id !== state.current)
+    .map((p) => `<option value="${p.id}">${esc(p.name)}</option>`).join("");
+  const tabName = (state.persons.find((p) => p.id === state.current) || {}).name || `#${state.current}`;
+  $("#pendTabName").textContent = tabName;
+  $("#pendMsg").innerHTML = "";
+  $("#pendingModal").style.display = "flex";
+  pendModeChanged();
+}
+
+function pendModeChanged() {
+  const v = (document.querySelector('input[name="pendAction"]:checked') || {}).value || "approve";
+  $("#pendNameWrap").style.display = v === "rename" ? "" : "none";
+  $("#pendTargetWrap").style.display = v === "existing" ? "" : "none";
+}
+
+async function resolvePending() {
+  const item = _pendingQueue[0];
+  if (!item) return;
+  const v = (document.querySelector('input[name="pendAction"]:checked') || {}).value || "approve";
+  const body = { key: item.key, action: v };
+  if (v === "rename") body.name = $("#pendName").value.trim();
+  if (v === "existing") body.target_pid = Number($("#pendTarget").value);
+  const msg = $("#pendMsg");
+  msg.innerHTML = `<span style="color:var(--muted)">⏳ Guardando…</span>`;
+  try {
+    const res = await fetch(`/api/person/${state.current}/pending`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    });
+    const data = await res.json();
+    if (!res.ok || data.error) {
+      msg.innerHTML = `<span style="color:#d32f2f">${esc(data.error || "Error al confirmar")}</span>`;
+      return;
+    }
+    msg.innerHTML = "";
+    _pendingQueue.shift();
+    if (data.status === "cancelled") {
+      toast("Informe descartado", "green");
+    } else {
+      toast(`Informe ${data.created ? "creó paciente nuevo" : "guardado"} — ${esc(data.person_name || "")}`, "green");
+      await loadPersons();
+      if (data.pid) await selectPerson(data.pid);
+    }
+    _showNextPending();
+  } catch (e) {
+    msg.innerHTML = `<span style="color:#d32f2f">${esc(e.message)}</span>`;
+  }
+}
+
+async function cancelPending() {
+  const item = _pendingQueue[0];
+  if (!item) return;
+  const msg = $("#pendMsg");
+  try {
+    const res = await fetch(`/api/person/${state.current}/pending`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ key: item.key, action: "cancel" }),
+    });
+    const data = await res.json();
+    if (!res.ok || data.error) {
+      msg.innerHTML = `<span style="color:#d32f2f">${esc(data.error || "Error")}</span>`;
+      return;
+    }
+    msg.innerHTML = "";
+    _pendingQueue.shift();
+    toast("Informe descartado", "green");
+    _showNextPending();
+  } catch (e) {
+    msg.innerHTML = `<span style="color:#d32f2f">${esc(e.message)}</span>`;
+  }
 }
 
 async function selectPerson(id) {
@@ -1142,6 +1238,12 @@ async function uploadBatch() {
     if (movedCreated) {
       toast("Se creó un paciente nuevo por el nombre del informe", "yellow");
       selectPerson(movedCreated);
+    }
+    // informes con paciente no reconocido: pedir confirmación antes de crear
+    const pending = (data.results || []).filter((r) => r.status === "pending");
+    if (pending.length) {
+      _pendingQueue = pending.flatMap((r) => r.pending || []);
+      _showNextPending();
     }
     // encolar regeneración del informe IA en segundo plano (no bloquea)
     ensureAIRepos();

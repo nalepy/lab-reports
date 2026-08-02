@@ -130,6 +130,13 @@ class PersonIn(BaseModel):
     age: str = ""
 
 
+class PendingResolveIn(BaseModel):
+    key: str
+    action: str
+    target_pid: int = None
+    name: str = ""
+
+
 # ------------------------------------------------------------------ api
 
 @app.get("/api/status")
@@ -580,6 +587,15 @@ def _store_upload(pid: int, filename: str, content: bytes) -> dict:
         try:
             res = db.ingest(str(dest), force=False, library_dir=str(LIBRARY_DIR))
             study_date = res.get("study_date") or ""
+            if res.get("status") == "pending":
+                # paciente no reconocido: el informe espera confirmación del
+                # usuario (crear / elegir / corregir) antes de crearse persona
+                dest.unlink(missing_ok=True)   # la copia ya vive en la biblioteca
+                return {
+                    "ok": True, "file": filename, "status": "pending",
+                    "pending": res.get("pending") or [],
+                    "message": "Paciente no reconocido: requiere confirmación.",
+                }
             if res.get("status") == "duplicate":
                 dest.unlink(missing_ok=True)
                 return {"ok": True, "file": filename, "status": "duplicate",
@@ -690,6 +706,26 @@ async def upload_batch(pid: int, files: list[UploadFile] = File(...)):
             "new_reports": total_new_reports,
         },
     }
+
+
+@app.post("/api/person/{pid}/pending")
+async def resolve_pending(pid: int, body: PendingResolveIn):
+    """Resuelve un informe con paciente no reconocido tras la confirmación.
+
+    actions: approve (crear con nombre inferido), rename (nombre corregido),
+    existing (vincular a target_pid), current (pestaña actual), cancel.
+    """
+    b = body
+    if not b.key or b.action not in (
+            "approve", "rename", "existing", "current", "cancel"):
+        return JSONResponse({"error": "Solicitud inválida."}, status_code=400)
+    target_pid = None
+    if b.action in ("existing", "current"):
+        target_pid = b.target_pid or pid
+        if b.action == "current":
+            target_pid = pid
+    return db.resolve_pending(b.key, b.action, target_pid=target_pid,
+                              name=(b.name or "").strip())
 
 
 # ------------------------------------------------------------------ carpeta DICOM / zip

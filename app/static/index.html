@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Panel de Laboratorio Clínico</title>
-<link rel="stylesheet" href="/static/style.css?v=20260802v">
+<link rel="stylesheet" href="/static/style.css?v=20260802w">
 <script src="/static/vendor/chart.umd.min.js"></script>
 <script src="/static/marked.min.js"></script>
 <script src="/static/dicom-convert.js"></script>
@@ -48,6 +48,32 @@
   </div>
 </div>
 
+<div class="modal-overlay" id="pendingModal" style="display:none">
+  <div class="settings-card">
+    <h3>🤔 Paciente no reconocido</h3>
+    <div id="pendingInfo" style="margin-bottom:10px"></div>
+    <div class="del-options" style="display:grid;gap:8px">
+      <label><input type="radio" name="pendAction" value="approve" checked onchange="pendModeChanged()">
+        <b>Crear paciente nuevo</b> con el nombre inferido del informe</label>
+      <label><input type="radio" name="pendAction" value="rename" onchange="pendModeChanged()">
+        <b>Crear paciente nuevo</b> con nombre corregido</label>
+      <div id="pendNameWrap" style="display:none;padding-left:22px">
+        <input type="text" id="pendName" placeholder="Nombre corregido">
+      </div>
+      <label><input type="radio" name="pendAction" value="existing" onchange="pendModeChanged()">
+        <b>Usar un paciente existente</b></label>
+      <div id="pendTargetWrap" style="display:none;padding-left:22px">
+        <select id="pendTarget"></select>
+      </div>
+      <label><input type="radio" name="pendAction" value="current" onchange="pendModeChanged()">
+        <b>Usar la pestaña actual</b> — <span id="pendTabName"></span></label>
+    </div>
+    <div id="pendMsg" style="margin-top:8px"></div>
+    <button id="pendConfirmBtn" onclick="resolvePending()" style="margin-top:10px">Confirmar</button>
+    <button class="btn-link" onclick="cancelPending()">Descartar informe</button>
+  </div>
+</div>
+
 <div class="modal-overlay" id="delModal" style="display:none">
   <div class="settings-card">
     <h3>🗑 Eliminar paciente</h3>
@@ -87,6 +113,6 @@
   </div>
 </div>
 
-<script src="/static/app.js?v=20260802v"></script>
+<script src="/static/app.js?v=20260802w"></script>
 </body>
 </html>
