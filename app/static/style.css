@@ -802,6 +802,61 @@ td .trend-flat { color: var(--muted); }
   .folder-info { display: none; }
 }
 
+/* ============================================================
+   SUBIR ESTUDIOS — selector único
+   ============================================================ */
+.upload-zone { display: grid; gap: 10px; }
+.upload-input {
+  position: absolute; width: 1px; height: 1px; opacity: 0; overflow: hidden;
+}
+.upload-drop {
+  display: flex; align-items: center; gap: 14px;
+  border: 1.5px dashed var(--serum); background: var(--serum-wash);
+  border-radius: var(--radius); padding: 18px 16px; cursor: pointer;
+  transition: background .15s, border-color .15s;
+}
+.upload-drop:hover { background: #d6eef0; border-color: var(--serum-brt); }
+.upload-icon { font-size: 30px; }
+.upload-drop strong { font-size: 14.5px; color: var(--ink); }
+.upload-drop span { color: var(--muted); font-size: 12.5px; }
+.up-mode {
+  display: flex; align-items: center; gap: 8px; font-size: 12.5px;
+  color: var(--ink-2); cursor: pointer; padding: 2px 0;
+}
+.up-mode input { accent-color: var(--serum); width: 15px; height: 15px; }
+.upload-files { display: grid; gap: 4px; max-height: 160px; overflow-y: auto; }
+.up-file {
+  font-size: 12px; color: var(--ink-2); background: var(--surface-2);
+  border: 1px solid var(--line-soft); border-radius: 6px; padding: 5px 9px;
+  display: flex; justify-content: space-between; gap: 8px;
+  font-family: var(--font-mono);
+}
+.up-file span { color: var(--faint); white-space: nowrap; }
+.up-result {
+  font-size: 12.5px; padding: 5px 4px; color: var(--ink-2);
+  display: flex; gap: 6px; align-items: baseline;
+}
+.up-err { color: var(--red); }
+
+/* aviso de información nueva para el informe IA */
+.new-info-banner { border-left-width: 4px; }
+
+/* ============================================================
+   NUEVO PACIENTE — modal + botón
+   ============================================================ */
+.modal-overlay {
+  position: fixed; inset: 0; background: rgba(16,21,28,.5);
+  backdrop-filter: blur(3px); z-index: 70; display: flex;
+  align-items: center; justify-content: center; padding: 20px;
+}
+.person-add { padding: 10px 12px; border-bottom: 1px solid var(--line-soft); }
+.btn-add {
+  width: 100%; background: var(--serum-wash); color: var(--serum-deep);
+  border: 1px dashed var(--serum); border-radius: 8px; padding: 8px 10px;
+  font-weight: 700; font-size: 13px; cursor: pointer; transition: background .15s;
+}
+.btn-add:hover { background: var(--serum); color: #fff; }
+
 @media (prefers-reduced-motion: reduce) {
   * { transition: none !important; animation: none !important; }
 }

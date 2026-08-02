@@ -67,14 +67,6 @@ async function loadPersons() {
   try {
     state.persons = await api("/api/persons");
     renderPersonList();
-    const st = await api("/api/status");
-    const exists = st.exists ? `📂 ${esc(st.lab_folder)}` : `⚠️ Carpeta no encontrada: ${esc(st.lab_folder)}`;
-    $("#folderInfo").textContent = exists;
-    if (st.last_scan && st.last_scan.ts) {
-      const n = st.last_scan.new_reports || 0;
-      $("#scanResult").textContent = `Último escaneo: ${new Date(st.last_scan.ts * 1000).toLocaleTimeString("es-PY")}` +
-        (n ? ` · ${n} informe(s) nuevos` : "");
-    }
   } catch (e) {
     toast("Error al cargar datos: " + e.message, "red");
   }
@@ -82,8 +74,9 @@ async function loadPersons() {
 
 function renderPersonList() {
   const el = $("#personList");
+  const addBtn = `<div class="person-add"><button class="btn-add" onclick="openNewPatient()">+ Nuevo paciente</button></div>`;
   if (!state.persons.length) {
-    el.innerHTML = `<h3>Personas</h3><div style="padding:12px;color:#888">Sin datos aún. Escanee la carpeta.</div>`;
+    el.innerHTML = `<h3>Personas</h3>${addBtn}<div style="padding:12px;color:#888">Sin pacientes aún. Agregue uno o suba estudios.</div>`;
     return;
   }
   const items = state.persons.map((p) => {
@@ -97,7 +90,46 @@ function renderPersonList() {
       ${badge}
     </div>`;
   }).join("");
-  el.innerHTML = `<h3>Personas (${state.persons.length})</h3>` + items;
+  el.innerHTML = `<h3>Personas (${state.persons.length})</h3>` + addBtn + items;
+}
+
+/* ---------------- nuevo paciente ---------------- */
+
+function openNewPatient() {
+  $("#newPatientModal").style.display = "flex";
+  $("#npName").focus();
+}
+function closeNewPatient() {
+  $("#newPatientModal").style.display = "none";
+  $("#newPatientMsg").innerHTML = "";
+}
+
+async function createPatient(ev) {
+  ev.preventDefault();
+  const msg = $("#newPatientMsg");
+  const name = $("#npName").value.trim();
+  if (!name) { msg.innerHTML = `<span style="color:#d32f2f">Escriba el nombre.</span>`; return false; }
+  try {
+    const res = await fetch("/api/persons", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        name,
+        doc: $("#npDoc").value.trim(),
+        sex: $("#npSex").value.trim(),
+        age: $("#npAge").value.trim(),
+      }),
+    });
+    const data = await res.json();
+    if (!res.ok) { msg.innerHTML = `<span style="color:#d32f2f">${esc(data.error || "Error")}</span>`; return false; }
+    closeNewPatient();
+    toast("Paciente creado", "green");
+    await loadPersons();
+    selectPerson(data.id);
+  } catch (e) {
+    msg.innerHTML = `<span style="color:#d32f2f">${esc(e.message)}</span>`;
+  }
+  return false;
 }
 
 async function selectPerson(id) {
@@ -113,45 +145,6 @@ async function selectPerson(id) {
   } catch (e) {
     if (state.current !== token) return;
     $("#personPanel").innerHTML = `<div class="empty-state"><h2>Error</h2><p>${esc(e.message)}</p></div>`;
-  }
-}
-
-/* ---------------- rescan ---------------- */
-
-async function rescanFolder(silent = false) {
-  if (!silent) {
-    const btn = $("#btnRescan");
-    btn.disabled = true;
-    btn.textContent = "⏳ Escaneando…";
-    $("#scanResult").textContent = "";
-  }
-  try {
-    const r = await api("/api/rescan", { method: "POST" });
-    const dupMsg = r.duplicates_removed ? ` · ${r.duplicates_removed} duplicado(s) eliminado(s)` : "";
-    const errMsg = r.errors && r.errors.length ? ` · ⚠️ ${r.errors.length} error(es)` : "";
-    const msg = `${r.checked} archivo(s) revisado(s) · ${r.new_reports} nuevo(s)${dupMsg}${errMsg}`;
-    $("#scanResult").textContent = msg;
-    if (silent) return;
-    if (r.new_reports > 0) {
-      toast(`${r.new_reports} informe(s) nuevo(s) ingerido(s)`, "green");
-    } else if (r.errors && r.errors.length) {
-      toast("Errores: " + r.errors[0], "yellow");
-    } else {
-      toast("Sin archivos nuevos.", "green");
-    }
-    await loadPersons();
-    if (state.current) {
-      state.detail = await api(`/api/person/${state.current}`);
-      renderPerson();
-    }
-  } catch (e) {
-    if (!silent) toast("Error al escanear: " + e.message, "red");
-  } finally {
-    if (!silent) {
-      const btn = $("#btnRescan");
-      btn.disabled = false;
-      btn.textContent = "🔄 Buscar archivos nuevos";
-    }
   }
 }
 
@@ -187,26 +180,26 @@ function renderPerson() {
   </div>
 
   <div class="card" id="uploadCard">
-    <div class="card-header">📤 Subir estudio médico</div>
+    <div class="card-header">📤 Subir estudios</div>
     <div class="card-body">
-      <form class="med-form" onsubmit="return uploadReport(event)">
-        <input type="file" id="uploadFile" accept=".pdf,.jpg,.jpeg,.png,.gif,.webp,.bmp,.tif,.tiff,.dcm,.dicom,.zip,.doc,.docx" style="grid-column: span 2;">
-        <input id="uploadNote" placeholder="Nota (ej: Radiografía de tórax, IRM rodilla…)" style="grid-column: span 2;">
-        <button type="submit" style="grid-column: span 2;">Subir y analizar</button>
-      </form>
-      <div class="med-form" style="margin-top:8px">
-        <input type="file" id="uploadFolder" webkitdirectory directory multiple style="grid-column: span 2;">
-        <button type="button" onclick="uploadFolder(event)" style="grid-column: span 2;background:var(--gray)">📁 Subir carpeta (DICOM, con subcarpetas)</button>
+      <div class="upload-zone">
+        <input type="file" id="uploadFiles" class="upload-input" multiple
+               accept=".pdf,.jpg,.jpeg,.png,.gif,.webp,.bmp,.tif,.tiff,.dcm,.dicom,.zip,.doc,.docx,.txt,.csv"
+               onchange="onUploadPicked()">
+        <label for="uploadFiles" class="upload-drop" id="uploadDropLabel">
+          <span class="upload-icon">📁</span>
+          <span><strong>Elija archivos o una carpeta</strong><br>PDF de laboratorio, imágenes, DICOM, u otros estudios</span>
+        </label>
+        <label class="up-mode"><input type="checkbox" id="uploadFolderMode" onchange="onFolderMode()">
+          <span>Modo carpeta (seleccionar una carpeta completa con subcarpetas)</span></label>
+        <button type="button" class="btn" onclick="uploadBatch()">⬆️ Subir y clasificar</button>
+        <div id="uploadFileList" class="upload-files"></div>
       </div>
-      <form class="med-form" style="margin-top:8px" onsubmit="return fetchDicomLibrary(event)">
-        <input type="text" id="dicomLink" placeholder="Link de dicomlibrary.com (…/?study=…)" style="grid-column: span 2;">
-        <button type="submit" style="grid-column: span 2;background:#6a1b9a">🌐 Importar desde dicomlibrary.com</button>
-      </form>
-      <div class="med-hint">Acepta <strong>cualquier tipo de estudio</strong>: PDF de
-      laboratorio (se ingesta al historial), imágenes (RX, IRM, ecografías),
-      <strong>carpetas DICOM completas</strong> (con subcarpetas o ZIP), y links de
-      dicomlibrary.com. Todo queda adjunto en esta pestaña del paciente.</div>
       <div id="uploadResult"></div>
+      <form class="med-form" style="margin-top:12px" onsubmit="return fetchDicomLibrary(event)">
+        <input type="text" id="dicomLink" placeholder="O importe por link de dicomlibrary.com (…/?study=…)" style="grid-column: span 2;">
+        <button type="submit" style="grid-column: span 2;background:#6a1b9a">🌐 Importar por link</button>
+      </form>
     </div>
   </div>
 
@@ -232,6 +225,11 @@ function renderPerson() {
   <div class="card" id="aiCard">
     <div class="card-header">🧠 Informe médico con IA</div>
     <div class="card-body">
+      ${d.new_info && d.new_info.has_new ? `
+      <div class="drug-warning sev-border-yellow new-info-banner">
+        <div class="d-title">🆕 ${d.new_info.count} estudio(s) nuevo(s) desde el último informe</div>
+        <div>El informe IA aún no incluye esta información. Pulse “Regenerar (fuerza)” para actualizarlo.</div>
+      </div>` : ""}
       <div class="med-form">
         <label style="display:flex;align-items:center;gap:6px;font-weight:600">
           Modelo de IA:
@@ -832,7 +830,10 @@ async function renderDocuments(d) {
             <div class="doc-name">📁 ${esc(doc.orig_filename)}</div>
             <div class="doc-sub">${dcmCount ? dcmCount + " DICOM · " : ""}${(list.files || []).length} archivo(s)</div>
             ${fileList ? `<ul class="doc-filelist">${fileList}${more}</ul>` : ""}
-            <div class="doc-actions"><span></span><button onclick="deleteDocument(${doc.id})" title="Eliminar">🗑</button></div>
+            <div class="doc-actions">
+              <a href="/api/documents/${doc.id}/zip" title="Descargar todo (ZIP, formatos originales)">⬇️ ZIP</a>
+              <button onclick="deleteDocument(${doc.id})" title="Eliminar">🗑</button>
+            </div>
           </div>`,
       };
     }
@@ -867,39 +868,71 @@ async function deleteDocument(docId) {
   }
 }
 
-async function uploadFolder(ev) {
-  ev.preventDefault();
-  const input = $("#uploadFolder");
-  const box = $("#uploadResult");
-  if (!input.files || !input.files.length) {
-    toast("Seleccione una carpeta", "yellow");
-    return false;
+/* ---------------- subir estudios (selector único) ---------------- */
+
+function onFolderMode() {
+  const input = $("#uploadFiles");
+  const folder = $("#uploadFolderMode").checked;
+  if (folder) {
+    input.setAttribute("webkitdirectory", "");
+    input.setAttribute("directory", "");
+  } else {
+    input.removeAttribute("webkitdirectory");
+    input.removeAttribute("directory");
   }
-  const files = Array.from(input.files);
+  input.value = "";
+  $("#uploadFileList").innerHTML = "";
+}
+
+function onUploadPicked() {
+  const files = Array.from($("#uploadFiles").files || []);
+  const list = $("#uploadFileList");
+  if (!files.length) { list.innerHTML = ""; return; }
+  list.innerHTML = files.map((f) =>
+    `<div class="up-file">${esc(f.webkitRelativePath || f.name)} <span>${(f.size / 1024).toFixed(0)} KB</span></div>`
+  ).join("");
+}
+
+async function uploadBatch() {
+  const input = $("#uploadFiles");
+  const box = $("#uploadResult");
+  const list = $("#uploadFileList");
+  const files = Array.from(input.files || []);
+  if (!files.length) { toast("Seleccione archivos o una carpeta", "yellow"); return; }
   const fd = new FormData();
   for (const f of files) {
-    // conservar la ruta relativa (subcarpetas)
-    const rel = f.webkitRelativePath || f.name;
-    fd.append("files", f, rel);
+    // en modo carpeta conservamos la ruta relativa; el backend agrupa DICOM
+    fd.append("files", f, f.webkitRelativePath || f.name);
   }
-  const note = $("#uploadNote") ? $("#uploadNote").value.trim() : "";
-  if (note) fd.append("notes", note);
-  box.innerHTML = `<p style="color:var(--muted)">⏳ Subiendo carpeta (${files.length} archivos)…</p>`;
+  list.innerHTML = "";
+  box.innerHTML = `<p style="color:var(--muted)">⏳ Subiendo y clasificando ${files.length} archivo(s)…</p>`;
   try {
-    const res = await fetch(`/api/person/${state.current}/upload-folder`, { method: "POST", body: fd });
+    const res = await fetch(`/api/person/${state.current}/upload-batch`, { method: "POST", body: fd });
     const data = await res.json();
     if (!res.ok || data.error) {
-      box.innerHTML = `<div class="drug-warning sev-border-red"><div class="d-title">Error</div><div>${esc(data.error || "Error al subir carpeta")}</div></div>`;
-      return false;
+      box.innerHTML = `<div class="drug-warning sev-border-red"><div class="d-title">Error</div><div>${esc(data.error || "Error al subir")}</div></div>`;
+      return;
     }
-    box.innerHTML = `<div class="drug-warning sev-border-green"><div class="d-title">✅ ${esc(data.message)}</div></div>`;
-    toast(data.message, "green");
+    const rows = (data.results || []).map((r) => {
+      const icon = r.ok ? (r.status === "duplicate" ? "🟡" : "✅") : "❌";
+      return `<div class="up-result ${r.ok ? "" : "up-err"}">${icon} <b>${esc(r.file)}</b> — ${esc(r.message || r.status)}</div>`;
+    }).join("");
+    const s = data.summary || {};
+    const note = s.new_reports
+      ? `<div class="drug-warning sev-border-yellow" style="margin-top:10px">
+           <div class="d-title">🆕 Se agregaron ${s.new_reports} informe(s) de laboratorio</div>
+           <div>Regenere el informe IA para que considere la información nueva.</div>
+         </div>`
+      : "";
+    box.innerHTML = `<div class="drug-warning sev-border-green"><div class="d-title">✅ Subida completa: ${s.uploaded || 0} archivo(s)</div></div>${rows}${note}`;
+    toast(s.new_reports ? `${s.new_reports} informe(s) nuevo(s) — actualice el informe IA` : "Subida completa", s.new_reports ? "yellow" : "green");
+    // recargar persona (informes nuevos + documentos + aviso)
     state.detail = await api(`/api/person/${state.current}`);
+    await loadPersons();
     renderPerson();
   } catch (e) {
     box.innerHTML = `<div class="drug-warning sev-border-red"><div class="d-title">Error</div><div>${esc(e.message)}</div></div>`;
   }
-  return false;
 }
 
 async function fetchDicomLibrary(ev) {
@@ -927,38 +960,6 @@ async function fetchDicomLibrary(ev) {
     }
     box.innerHTML = `<div class="drug-warning sev-border-green"><div class="d-title">✅ ${esc(data.message)}</div></div>`;
     state.detail = await api(`/api/person/${state.current}`);
-    renderPerson();
-  } catch (e) {
-    box.innerHTML = `<div class="drug-warning sev-border-red"><div class="d-title">Error</div><div>${esc(e.message)}</div></div>`;
-  }
-  return false;
-}
-
-async function uploadReport(ev) {
-  ev.preventDefault();
-  const input = $("#uploadFile");
-  const box = $("#uploadResult");
-  const note = $("#uploadNote") ? $("#uploadNote").value.trim() : "";
-  if (!input.files || !input.files.length) {
-    toast("Seleccione un archivo", "yellow");
-    return false;
-  }
-  const fd = new FormData();
-  fd.append("file", input.files[0]);
-  fd.append("notes", note);
-  box.innerHTML = `<p style="color:var(--muted)">⏳ Procesando ${esc(input.files[0].name)}…</p>`;
-  try {
-    const res = await fetch(`/api/person/${state.current}/upload`, { method: "POST", body: fd });
-    const data = await res.json();
-    if (!res.ok || data.error) {
-      box.innerHTML = `<div class="drug-warning sev-border-red"><div class="d-title">Error</div><div>${esc(data.error || "Error al subir")}</div></div>`;
-      return false;
-    }
-    box.innerHTML = `<div class="drug-warning ${data.status === "duplicate" ? "sev-border-yellow" : "sev-border-green"}"><div class="d-title">✅ ${esc(data.message || "OK")}</div></div>`;
-    toast(data.message || "Archivo subido", data.status === "duplicate" ? "yellow" : "green");
-    // recargar persona (informes nuevos + documentos)
-    state.detail = await api(`/api/person/${state.current}`);
-    await loadPersons();
     renderPerson();
   } catch (e) {
     box.innerHTML = `<div class="drug-warning sev-border-red"><div class="d-title">Error</div><div>${esc(e.message)}</div></div>`;
@@ -1005,14 +1006,4 @@ async function doLogout() {
 
 document.addEventListener("DOMContentLoaded", () => {
   loadPersons();
-  // escaneo en segundo plano al iniciar (no bloquea navegación)
-  setTimeout(() => rescanFolder(false), 500);
-  // refresco automático de estado cada 60s
-  setInterval(() => {
-    api("/api/status").then((st) => {
-      if (st.last_scan && st.last_scan.ts) {
-        $("#scanResult").textContent = `Último escaneo: ${new Date(st.last_scan.ts * 1000).toLocaleTimeString("es-PY")}`;
-      }
-    }).catch(() => {});
-  }, 60000);
 });

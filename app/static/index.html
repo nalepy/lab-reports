@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Panel de Laboratorio Clínico</title>
-<link rel="stylesheet" href="/static/style.css?v=20260802e">
+<link rel="stylesheet" href="/static/style.css?v=20260802f">
 <script src="/static/vendor/chart.umd.min.js"></script>
 <script src="/static/marked.min.js"></script>
 </head>
@@ -22,10 +22,7 @@
   <div class="header-row">
     <h1><span class="brand-mark">🧪</span> Panel de Laboratorio Clínico</h1>
     <div class="header-actions">
-      <span id="folderInfo" class="folder-info"></span>
-      <button id="btnRescan" onclick="rescanFolder()">🔄 Buscar archivos nuevos</button>
       <button class="icon-btn" onclick="toggleSettings()" title="Configuración" aria-label="Configuración">⚙️</button>
-      <span id="scanResult" class="scan-result"></span>
     </div>
   </div>
 </header>
@@ -35,11 +32,29 @@
   <section id="personPanel" class="person-panel">
     <div id="emptyState" class="empty-state">
       <h2>Seleccione una persona</h2>
-      <p>Los informes de laboratorio se cargan desde la carpeta de análisis.
-      Use el botón "Buscar archivos nuevos" para ingestar PDFs recién agregados.</p>
+      <p>Suba estudios médicos (PDF, imágenes, DICOM) desde esta web y el panel
+      los clasifica e interpreta automáticamente. Agregue un paciente nuevo con
+      el botón “+ Nuevo paciente”.</p>
     </div>
   </section>
 </main>
+
+<div class="modal-overlay" id="newPatientModal" style="display:none">
+  <div class="settings-card">
+    <h3>🧑‍⚕️ Nuevo paciente</h3>
+    <form onsubmit="return createPatient(event)">
+      <input type="text" id="npName" placeholder="Nombre y apellido" required>
+      <input type="text" id="npDoc" placeholder="Documento / CI (opcional)">
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
+        <input type="text" id="npAge" placeholder="Edad (opcional)" inputmode="numeric">
+        <input type="text" id="npSex" placeholder="Sexo M/F (opcional)" maxlength="1">
+      </div>
+      <button type="submit">Crear paciente</button>
+    </form>
+    <div id="newPatientMsg"></div>
+    <button class="btn-link" onclick="closeNewPatient()">Cerrar</button>
+  </div>
+</div>
 
 <div id="toast" class="toast"></div>
 <div class="settings-panel" id="settingsPanel" style="display:none">
@@ -57,6 +72,6 @@
   </div>
 </div>
 
-<script src="/static/app.js?v=20260802e"></script>
+<script src="/static/app.js?v=20260802f"></script>
 </body>
 </html>

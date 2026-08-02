@@ -121,6 +121,13 @@ class MedDelete(BaseModel):
     id: int
 
 
+class PersonIn(BaseModel):
+    name: str
+    doc: str = ""
+    sex: str = ""
+    age: str = ""
+
+
 # ------------------------------------------------------------------ api
 
 @app.get("/api/status")
@@ -143,6 +150,19 @@ def rescan(force: bool = False):
 @app.get("/api/persons")
 def persons():
     return db.persons()
+
+
+@app.post("/api/persons")
+def add_person(p: PersonIn):
+    """Crea un paciente nuevo (o devuelve el existente si coincide)."""
+    if not p.name.strip():
+        return JSONResponse({"error": "El nombre del paciente es obligatorio"},
+                            status_code=400)
+    try:
+        pid = db.add_person(p.name, p.doc, p.sex, p.age)
+    except ValueError as e:
+        return JSONResponse({"error": str(e)}, status_code=400)
+    return {"ok": True, "id": pid}
 
 
 @app.get("/api/person/{pid}")
@@ -195,12 +215,25 @@ def person_detail(pid: int):
             r["sources"] = sources_for("obesity_risk")
         elif "FUMAR" in r["title"].upper() or "TABAQ" in r["title"].upper():
             r["sources"] = sources_for("smoking_risk")
+    # aviso de datos nuevos desde el último informe IA
+    last_rep = db.last_ai_report_at(pid)
+    last_rep_n = (last_rep or "").replace("T", " ").split(".")[0]
+    new_since = []
+    for d in documents:
+        up = (d.get("uploaded_at") or "").replace("T", " ").split(".")[0]
+        if last_rep_n and up > last_rep_n:
+            new_since.append(d)
     return {
         "person": p,
         "reports": reports,
         "meds": meds,
         "documents": documents,
         "assessment": assessment,
+        "new_info": {
+            "has_new": bool(new_since),
+            "count": len(new_since),
+            "last_report": last_rep,
+        },
     }
 
 
@@ -290,62 +323,116 @@ def _kind_for(fname: str) -> str:
     return "other"
 
 
-@app.post("/api/person/{pid}/upload")
-async def upload_file(pid: int, file: UploadFile = File(...)):
-    """Sube cualquier tipo de estudio médico (PDF, imagen, RX, IRM/DICOM…)
-    directamente para un paciente, aunque no esté en la carpeta monitoreada.
+def _store_upload(pid: int, filename: str, content: bytes) -> dict:
+    """Clasifica y guarda un archivo subido desde la web.
 
-    - PDF: se intenta parsear como laboratorio; si no, queda como documento.
-    - Imágenes y otros: se guardan como documento adjunto, visibles en el tab.
+    - PDF: intenta ingestarlo como informe de laboratorio; si no parsea, queda
+      como documento adjunto. El original se conserva siempre para descarga.
+    - Imágenes / DICOM / otros: documento adjunto, formato original intacto.
     """
-    if not file.filename:
-        return JSONResponse({"error": "Archivo sin nombre."}, status_code=400)
-    ext = "." + file.filename.lower().rsplit(".", 1)[-1] if "." in file.filename else ""
+    ext = "." + filename.lower().rsplit(".", 1)[-1] if "." in filename else ""
     if ext not in ALLOWED_EXT:
-        return JSONResponse(
-            {"error": f"Tipo de archivo no soportado ({ext or 'sin extensión'}). "
-                      f"Aceptados: PDF, imágenes (JPG, PNG, GIF, WEBP, BMP, TIFF), "
-                      f"DICOM y otros."},
-            status_code=400)
-    p = db.person(pid)
-    if not p:
-        return JSONResponse({"error": "Persona no encontrada"}, status_code=404)
-
-    # guardar en el directorio de uploads del paciente
-    safe = re.sub(r"[^A-Za-z0-9._-]", "_", file.filename)
+        return {"ok": False, "file": filename, "status": "error",
+                "message": f"Tipo no soportado ({ext or 'sin extensión'})."}
+    safe = re.sub(r"[^A-Za-z0-9._-]", "_", filename)
     dest = UPLOAD_DIR / f"p{pid}_{int(time.time())}_{safe}"
-    content = await file.read()
     with open(dest, "wb") as f:
         f.write(content)
-
-    kind = _kind_for(file.filename)
+    kind = _kind_for(filename)
     size = len(content)
 
-    # PDF: intentar parsear como laboratorio
     if kind == "pdf":
         try:
             res = db.ingest(str(dest), force=False, library_dir=str(LIBRARY_DIR))
             if res.get("status") == "duplicate":
                 dest.unlink(missing_ok=True)
-                return {"ok": True, "status": "duplicate",
-                        "message": "Archivo duplicado (ya estaba registrado).",
-                        "file": file.filename}
+                return {"ok": True, "file": filename, "status": "duplicate",
+                        "message": "Duplicado (ya estaba registrado)."}
             if res.get("new_reports", 0) > 0:
-                db.add_document(pid, file.filename, str(dest), "pdf", size,
+                db.add_document(pid, filename, str(dest), "pdf", size,
                                 "Informe de laboratorio ingerido.")
-                return {"ok": True, "status": "ok",
-                        "message": f"{res['new_reports']} informe(s) ingerido(s).",
-                        "file": file.filename, "new_reports": res["new_reports"]}
-            # no aportó informes nuevos: queda como documento adjunto
-        except Exception as e:  # noqa: BLE001
-            pass  # PDF no parseable: se guarda igual como documento
+                return {"ok": True, "file": filename, "status": "laboratorio",
+                        "new_reports": res["new_reports"],
+                        "message": f"{res['new_reports']} informe(s) ingerido(s)."}
+        except Exception:  # noqa: BLE001
+            pass  # PDF no parseable: queda como adjunto
 
-    # imágenes / DICOM / otros: documento adjunto
-    doc_id = db.add_document(pid, file.filename, str(dest), kind, size,
-                             "Estudio/imagen subida manualmente.")
-    return {"ok": True, "status": "document",
-            "message": f"Documento guardado como adjunto ({kind}).",
-            "file": file.filename, "document_id": doc_id}
+    doc_id = db.add_document(pid, filename, str(dest), kind, size,
+                             "Estudio subido desde la web.")
+    return {"ok": True, "file": filename, "status": "document",
+            "document_id": doc_id,
+            "message": f"Guardado como adjunto ({kind})."}
+
+
+@app.post("/api/person/{pid}/upload")
+async def upload_file(pid: int, file: UploadFile = File(...)):
+    """Sube un estudio médico (PDF, imagen, DICOM…) desde la web."""
+    if not file.filename:
+        return JSONResponse({"error": "Archivo sin nombre."}, status_code=400)
+    p = db.person(pid)
+    if not p:
+        return JSONResponse({"error": "Persona no encontrada"}, status_code=404)
+    content = await file.read()
+    return _store_upload(pid, file.filename, content)
+
+
+@app.post("/api/person/{pid}/upload-batch")
+async def upload_batch(pid: int, files: list[UploadFile] = File(...)):
+    """Sube varios archivos a la vez (selector único de archivos/carpeta).
+
+    Cada archivo se clasifica (laboratorio PDF / imagen / DICOM / otro) y se
+    guarda en su formato original. Los DICOM en lote se agrupan en una carpeta.
+    """
+    if not files:
+        return JSONResponse({"error": "No se recibieron archivos."},
+                            status_code=400)
+    p = db.person(pid)
+    if not p:
+        return JSONResponse({"error": "Persona no encontrada"}, status_code=404)
+
+    results = []
+    dcm_group = []
+    total_new_reports = 0
+    for f in files:
+        if not f.filename:
+            continue
+        content = await f.read()
+        if f.filename.lower().endswith((".dcm", ".dicom")):
+            dcm_group.append((f.filename, content))
+            continue
+        results.append(_store_upload(pid, f.filename, content))
+
+    # agrupar DICOM en una sola carpeta (serie), preservando el formato
+    if dcm_group:
+        group_id = f"{int(time.time())}_{pid}"
+        group_dir = UPLOAD_DIR / f"grupo_{group_id}"
+        group_dir.mkdir(parents=True, exist_ok=True)
+        saved = 0
+        for fname, content in dcm_group:
+            safe = re.sub(r"[^A-Za-z0-9._-]", "_", fname)
+            (group_dir / safe).write_bytes(content)
+            saved += 1
+        doc_id = db.add_document(pid, f"Serie DICOM {group_id} ({saved} archivos)",
+                                 str(group_dir), "dicom_folder", saved,
+                                 "Serie DICOM subida desde la web.")
+        results.append({"ok": True, "file": f"Serie DICOM ({saved} archivos)",
+                        "status": "dicom_folder", "document_id": doc_id,
+                        "message": f"Serie DICOM agrupada ({saved} archivos)."})
+
+    for r in results:
+        total_new_reports += r.get("new_reports", 0)
+    ok_count = sum(1 for r in results if r.get("ok"))
+    err_count = sum(1 for r in results if not r.get("ok"))
+    return {
+        "ok": True,
+        "results": results,
+        "summary": {
+            "total": len(results),
+            "uploaded": ok_count,
+            "errors": err_count,
+            "new_reports": total_new_reports,
+        },
+    }
 
 
 # ------------------------------------------------------------------ carpeta DICOM / zip
@@ -502,6 +589,32 @@ def document_file_in_folder(doc_id: int, relpath: str):
         ".dcm": "application/dicom", ".pdf": "application/pdf",
     }.get(ext, "application/octet-stream")
     return FileResponse(target, media_type=media)
+
+
+@app.get("/api/documents/{doc_id}/zip")
+def document_zip(doc_id: int):
+    """Descarga una carpeta de documentos completa como ZIP (formatos originales)."""
+    doc = db.document(doc_id)
+    if not doc:
+        return JSONResponse({"error": "Documento no encontrado"}, status_code=404)
+    root = os.path.realpath(db.resolve_path(doc["stored_path"]))
+    if not os.path.isdir(root):
+        return JSONResponse({"error": "No es una carpeta"}, status_code=404)
+    import io
+    import zipfile
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as z:
+        for dirpath, dirnames, filenames in os.walk(root):
+            for fn in sorted(filenames):
+                full = os.path.join(dirpath, fn)
+                rel = os.path.relpath(full, root)
+                z.write(full, rel)
+    fname = os.path.splitext(doc["orig_filename"])[0] or "estudio"
+    return Response(
+        buf.getvalue(),
+        media_type="application/zip",
+        headers={"Content-Disposition": f'attachment; filename="{fname}.zip"'},
+    )
 
 
 @app.get("/api/person/{pid}/documents")
@@ -740,9 +853,6 @@ async def auth_middleware(request: Request, call_next):
 
 @app.on_event("startup")
 def _start():
-    # ingesta inicial (solo si la base está vacía o se pide)
-    if db.conn.execute("SELECT COUNT(*) AS c FROM reports").fetchone()["c"] == 0:
-        scan_folder(force=False)
-    watcher = threading.Thread(target=_watch_loop, daemon=True,
-                               name="lab-watcher")
-    watcher.start()
+    # La carpeta local de laboratorio ya no existe: la ingesta es solo por la
+    # web (uploads). No se arranca observador ni escaneo inicial.
+    pass

@@ -431,6 +431,41 @@ class DB:
                WHERE p.id=? GROUP BY p.id""", (pid,)).fetchone()
         return dict(r) if r else None
 
+    def add_person(self, name: str, doc: str = "", sex: str = "", age: str = "") -> int:
+        """Crea un paciente nuevo (o devuelve el existente si coincide por doc/nombre)."""
+        name = (name or "").strip()
+        if not name:
+            raise ValueError("El nombre del paciente es obligatorio")
+        doc = (doc or "").strip()
+        if doc:
+            r = self.conn.execute(
+                "SELECT id FROM persons WHERE doc=? LIMIT 1", (doc,)).fetchone()
+            if r:
+                return r["id"]
+        tok = self._first_name(name)
+        if tok:
+            r = self.conn.execute(
+                "SELECT id FROM persons WHERE ? != '' AND LOWER(name) LIKE LOWER(?) LIMIT 1",
+                (tok, f"%{tok}%")).fetchone()
+            if r:
+                return r["id"]
+        age_i = None
+        try:
+            age_i = int(age) if str(age).strip() else None
+        except ValueError:
+            age_i = None
+        cur = self.conn.execute(
+            "INSERT INTO persons(name, doc, sex, age) VALUES(?,?,?,?)",
+            (name, doc, sex.strip().upper()[:1], age_i))
+        self.conn.commit()
+        return cur.lastrowid
+
+    def last_ai_report_at(self, pid: int) -> str | None:
+        r = self.conn.execute(
+            "SELECT MAX(generated_at) AS at FROM ai_reports WHERE person_id=?",
+            (pid,)).fetchone()
+        return r["at"] if r and r["at"] else None
+
     def reports_for(self, pid: int) -> list[dict]:
         rows = self.conn.execute(
             """SELECT r.*, GROUP_CONCAT(DISTINCT s.section) AS sections
@@ -485,10 +520,11 @@ class DB:
     def add_document(self, pid: int, orig_filename: str, stored_path: str,
                      kind: str = "other", size: int = 0, notes: str = "") -> int:
         rel = _relative_path(stored_path)
+        now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")  # local, igual que ai_reports
         cur = self.conn.execute(
             "INSERT INTO documents(person_id, orig_filename, stored_path, kind, "
-            "size, notes) VALUES(?,?,?,?,?,?)",
-            (pid, orig_filename, rel, kind, size, notes))
+            "size, notes, uploaded_at) VALUES(?,?,?,?,?,?,?)",
+            (pid, orig_filename, rel, kind, size, notes, now))
         self.conn.commit()
         return cur.lastrowid
 
