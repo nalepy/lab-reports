@@ -195,8 +195,8 @@ function renderPerson() {
         <div class="upload-actions-row">
           <button type="button" class="btn" onclick="document.getElementById('uploadFiles').click()">📄 Elegir archivos</button>
           <button type="button" class="btn btn-ghost" onclick="document.getElementById('uploadFolder').click()">📁 Elegir carpeta</button>
-          <button type="button" class="btn btn-primary" onclick="uploadBatch()">⬆️ Subir y clasificar</button>
         </div>
+        <div class="med-hint">La subida comienza automáticamente al elegir o soltar archivos/carpetas.</div>
         <input type="file" id="uploadFiles" class="upload-input" multiple
                accept=".pdf,.jpg,.jpeg,.png,.gif,.webp,.bmp,.tif,.tiff,.dcm,.dicom,.zip,.doc,.docx,.txt,.csv"
                onchange="onUploadPicked()">
@@ -892,18 +892,20 @@ function _renderUploadList(listEl) {
   ).join("");
 }
 
+let _uploadBusy = false;
+
 function onUploadPicked() {
   const input = $("#uploadFiles");
   _pendingUpload = Array.from(input.files || []);
   input.value = "";  // permite re-elegir el mismo archivo
-  _renderUploadList($("#uploadFileList"));
+  _startUpload();
 }
 
 function onFolderPicked() {
   const input = $("#uploadFolder");
   _pendingUpload = Array.from(input.files || []);
   input.value = "";
-  _renderUploadList($("#uploadFileList"));
+  _startUpload();
 }
 
 function onUploadDrop(ev) {
@@ -911,7 +913,12 @@ function onUploadDrop(ev) {
   const drop = $("#uploadDrop");
   if (drop) drop.classList.remove("drag");
   _pendingUpload = Array.from(ev.dataTransfer.files || []);
-  _renderUploadList($("#uploadFileList"));
+  _startUpload();
+}
+
+function _startUpload() {
+  if (_uploadBusy) { toast("Ya se está subiendo…", "yellow"); return; }
+  uploadBatch();
 }
 
 async function uploadBatch() {
@@ -919,6 +926,7 @@ async function uploadBatch() {
   const list = $("#uploadFileList");
   const files = _pendingUpload;
   if (!files.length) { toast("Seleccione o arrastre archivos/carpetas", "yellow"); return; }
+  _uploadBusy = true;
   const fd = new FormData();
   for (const f of files) {
     // con webkitRelativePath conservamos la estructura; el backend agrupa DICOM
@@ -968,6 +976,8 @@ async function uploadBatch() {
     }
   } catch (e) {
     box.innerHTML = `<div class="drug-warning sev-border-red"><div class="d-title">Error</div><div>${esc(e.message)}</div></div>`;
+  } finally {
+    _uploadBusy = false;
   }
 }
 
