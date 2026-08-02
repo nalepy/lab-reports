@@ -12,6 +12,7 @@ import time
 import threading
 import glob
 import asyncio
+from datetime import datetime
 from pathlib import Path
 
 from fastapi import FastAPI, UploadFile, File, Form, Request, Depends
@@ -311,6 +312,102 @@ def ai_report(pid: int, model: str = "deepseek", force: bool = False):
         return report
     except ai_engine.AIError as e:
         return JSONResponse({"error": str(e)}, status_code=502)
+
+
+# ------------------------------------------------------------------ informe IA en 2do plano
+
+class MetricsIn(BaseModel):
+    birth_date: str = ""
+    weight_kg: float | None = None
+    height_cm: float | None = None
+    bp: str = ""
+    hr: int | None = None
+
+
+@app.patch("/api/person/{pid}/metrics")
+def person_metrics(pid: int, m: MetricsIn):
+    """Guarda datos vitales manuales del paciente (fecha nac, peso, talla, PA, pulso)."""
+    if not db.person(pid):
+        return JSONResponse({"error": "Persona no encontrada"}, status_code=404)
+    db.update_person_metrics(pid, m.birth_date, m.weight_kg, m.height_cm,
+                             m.bp, m.hr)
+    return {"ok": True, "person": db.person(pid)}
+
+
+_AI_BG_LOCK = threading.Lock()
+_ai_jobs: dict[int, dict] = {}
+
+
+def _now_iso() -> str:
+    return datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+
+def _ai_report_stale(pid: int) -> bool:
+    """True si falta el informe IA o hay datos más nuevos que el último."""
+    last = db.last_ai_report_at(pid)
+    if not last:
+        return True
+    newest = db.newest_data_at(pid)
+    if not newest:
+        return False
+    try:
+        t_last = datetime.fromisoformat(last.replace("T", " "))
+        t_new = datetime.fromisoformat(newest.replace("T", " "))
+        return t_new > t_last
+    except ValueError:
+        return True
+
+
+def _bg_generate_reports(pids: list[int]):
+    """Genera informes secuencialmente en segundo plano (DeepSeek, sin bloquear)."""
+    for pid in pids:
+        _ai_jobs[pid] = {"status": "running", "started_at": _now_iso()}
+        try:
+            p = db.person(pid)
+            if not p:
+                _ai_jobs[pid] = {"status": "error", "error": "paciente inexistente"}
+                continue
+            tests = db.tests_for(pid)
+            meds = db.meds_for(pid)
+            reports = db.reports_for(pid)
+            assessment = build_assessment(p, tests, meds)
+            res = ai_engine.generate_report(p, assessment, meds, reports,
+                                            model_key="deepseek", force=True,
+                                            db=db)
+            _ai_jobs[pid] = {
+                "status": "done", "model": res.get("model"),
+                "finished_at": _now_iso(),
+                "fallback": bool(res.get("fallback")),
+            }
+        except Exception as e:  # noqa: BLE001
+            _ai_jobs[pid] = {"status": "error", "error": str(e)}
+
+
+@app.post("/api/ensure-ai-reports")
+def ensure_ai_reports():
+    """Verifica TODOS los pacientes; encola en 2do plano los informes IA
+    faltantes o vencidos (datos nuevos desde el último). No bloquea el sitio."""
+    pending: list[int] = []
+    busy = any(j.get("status") in ("running", "queued")
+               for j in _ai_jobs.values())
+    if not busy:
+        with _AI_BG_LOCK:
+            for p in db.persons():
+                pid = p["id"]
+                if _ai_jobs.get(pid, {}).get("status") in ("running", "queued"):
+                    continue
+                if _ai_report_stale(pid):
+                    _ai_jobs[pid] = {"status": "queued", "queued_at": _now_iso()}
+                    pending.append(pid)
+    if pending:
+        threading.Thread(target=_bg_generate_reports, args=(pending,),
+                         daemon=True).start()
+    return {"pending": pending, "queued": len(pending), "busy": busy}
+
+
+@app.get("/api/ai-jobs")
+def ai_jobs_status():
+    return {"jobs": _ai_jobs}
 
 
 # ------------------------------------------------------------------ upload

@@ -180,6 +180,56 @@ class DB:
         self.conn.executescript(SCHEMA)
         self.conn.commit()
         self.migrate_paths()
+        self.migrate_person_metrics()
+
+    def migrate_person_metrics(self):
+        """Agrega columnas de datos vitales manuales a persons (idempotente)."""
+        cols = {r[1] for r in self.conn.execute("PRAGMA table_info(persons)")}
+        adds = {
+            "birth_date": "TEXT DEFAULT ''",
+            "weight_kg": "REAL",
+            "height_cm": "REAL",
+            "bp": "TEXT DEFAULT ''",
+            "hr": "INTEGER",
+        }
+        changed = False
+        for name, ddl in adds.items():
+            if name not in cols:
+                self.conn.execute(f"ALTER TABLE persons ADD COLUMN {name} {ddl}")
+                changed = True
+        if changed:
+            self.conn.commit()
+        return changed
+
+    def update_person_metrics(self, pid: int, birth_date: str = "",
+                              weight_kg=None, height_cm=None,
+                              bp: str = "", hr=None):
+        """Guarda datos vitales manuales; recalcula la edad si hay nacimiento."""
+        age = None
+        bd = (birth_date or "").strip()
+        if bd:
+            try:
+                born = datetime.strptime(bd, "%Y-%m-%d").date()
+                age = (datetime.now().date() - born).days // 365
+            except ValueError:
+                age = None
+        self.conn.execute(
+            """UPDATE persons
+               SET birth_date=?, weight_kg=?, height_cm=?, bp=?, hr=?,
+                   age=COALESCE(?, age)
+               WHERE id=?""",
+            (bd, weight_kg, height_cm, bp, hr, age, pid))
+        self.conn.commit()
+
+    def newest_data_at(self, pid: int) -> str | None:
+        """Última marca de datos (informe ingerido o documento subido), local."""
+        r = self.conn.execute(
+            """SELECT MAX(t) AS m FROM (
+                 SELECT ingested_at AS t FROM reports WHERE person_id=?
+                 UNION ALL
+                 SELECT uploaded_at AS t FROM documents WHERE person_id=?
+               )""", (pid, pid)).fetchone()
+        return r["m"] if r and r["m"] else None
 
     def close(self):
         with self._lock:
@@ -611,11 +661,13 @@ class DB:
 
     def save_ai_report(self, pid: int, model_key: str, model_label: str,
                        content: str):
+        # hora local (igual que documents/reports) para comparar vencimiento
+        now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         self.conn.execute(
             """INSERT OR REPLACE INTO ai_reports(person_id, model_key,
                model_label, content, generated_at)
-               VALUES(?,?,?,?,datetime('now'))""",
-            (pid, model_key, model_label, content))
+               VALUES(?,?,?,?,?)""",
+            (pid, model_key, model_label, content, now))
         self.conn.commit()
 
     def load_ai_report(self, pid: int, model_key: str) -> dict | None:

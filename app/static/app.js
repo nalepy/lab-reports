@@ -8,6 +8,7 @@ const state = {
   charts: {},
   medAutocomplete: [],
   aiReportExists: false,   // hay informe IA guardado/renderizado
+  _tab: "resumen",
 };
 
 const $ = (sel) => document.querySelector(sel);
@@ -163,182 +164,189 @@ function renderPerson() {
     a.summary.n_systems_altered ? sevChip("green", `${a.summary.n_systems_altered} sistema(s) revisado(s)`) : "",
   ].join("");
 
+  const _tab = state._tab || "resumen";
+  const tabBtn = (name, icon, label) =>
+    `<button class="tab${_tab === name ? " active" : ""}" data-tab="${name}" onclick="switchTab('${name}')">${icon} ${label}</button>`;
+  const tabActive = (name) => (_tab === name ? " active" : "");
+
   panel.innerHTML = `
   <div class="person-header">
     <div>
       <h2>${esc(p.name)}</h2>
       <div class="meta">
         ${p.sex ? "Sexo: " + (p.sex === "M" ? "Masculino" : "Femenino") + " · " : ""}
-        ${p.age ? "Edad: " + p.age + " años · " : ""}
+        ${p.age ? "Edad: " + p.age + " años" + (p.birth_date ? " (" + esc(p.birth_date) + ")" : "") + " · " : ""}
         ${p.doc ? "Doc: " + esc(p.doc) + " · " : ""}
         ${p.n_reports} informe(s) · ${p.n_tests} análisis en total
       </div>
       <div class="severity-strip">${sevChips}</div>
     </div>
-    <div class="header-actions">
-      <button class="sev-chip sev-red" onclick="document.getElementById('disclaimer').scrollIntoView({behavior:'smooth'})">⚠️ Ver advertencia</button>
-    </div>
   </div>
 
-  <div class="card" id="uploadCard">
-    <div class="card-header">📤 Subir estudios</div>
-    <div class="card-body">
-      <div class="upload-zone">
-        <div class="upload-drop" id="uploadDrop"
-             onclick="document.getElementById('uploadFiles').click()"
-             ondragover="ev.preventDefault(); this.classList.add('drag')"
-             ondragleave="this.classList.remove('drag')"
-             ondrop="onUploadDrop(event)">
-          <span class="upload-icon">📁</span>
-          <span><strong>Arrastre archivos o carpetas aquí</strong><br>
-            o haga clic para elegir archivos · PDF de laboratorio, imágenes, DICOM u otros</span>
+  <div class="metrics-bar">
+    <input id="mBirth" placeholder="Nacimiento (AAAA-MM-DD)" value="${esc(p.birth_date || "")}">
+    <input id="mWeight" type="number" step="0.1" min="0" placeholder="Peso (kg)" value="${p.weight_kg ?? ""}">
+    <input id="mHeight" type="number" step="0.1" min="0" placeholder="Talla (cm)" value="${p.height_cm ?? ""}">
+    <input id="mBp" placeholder="Presión arterial (ej. 120/80)" value="${esc(p.bp || "")}">
+    <input id="mHr" type="number" min="0" placeholder="Pulso (bpm)" value="${p.hr ?? ""}">
+    <button class="btn" onclick="saveMetrics()">💾 Guardar</button>
+  </div>
+
+  <div class="tabs">
+    ${tabBtn("resumen", "📋", "Resumen")}
+    ${tabBtn("laboratorio", "🧪", "Laboratorio")}
+    ${tabBtn("hallazgos", "🔎", "Hallazgos")}
+    ${tabBtn("medicamentos", "💊", "Medicamentos")}
+    ${tabBtn("estudios", "🖼️", "Estudios")}
+    ${tabBtn("historial", "🗂", "Historial")}
+  </div>
+
+  <div class="tab-panel${tabActive("resumen")}" id="tab-resumen">
+    <div class="card summary-card tone-${esc(a.summary.tone)}">
+      <div class="card-header">📋 Resumen ejecutivo</div>
+      <div class="card-body"><p>${esc(a.summary.text)}</p></div>
+    </div>
+
+    <div class="card" id="aiCard">
+      <div class="card-header">
+        🧠 Informe médico con IA
+        <button class="btn btn-ghost" style="float:right" onclick="downloadFullPDF()"
+                title="Descargar el informe completo en un solo PDF">⬇️ PDF completo</button>
+      </div>
+      <div class="card-body">
+        <div class="med-form">
+          <label style="display:flex;align-items:center;gap:6px;font-weight:600">
+            Modelo de IA:
+            <select id="aiModel" style="padding:8px;border:1px solid var(--border);border-radius:6px">
+              <option value="deepseek">DeepSeek V4 Pro</option>
+              <option value="opus">Opus 4.8</option>
+            </select>
+          </label>
+          <button id="aiGenBtn" onclick="generateAIReport()" style="background:var(--blue);color:#fff;border:none;border-radius:6px;padding:8px 16px;font-weight:600;cursor:pointer">✨ Generar informe IA</button>
         </div>
-        <div class="upload-actions-row">
-          <button type="button" class="btn" onclick="document.getElementById('uploadFiles').click()">📄 Elegir archivos</button>
-          <button type="button" class="btn btn-ghost" onclick="document.getElementById('uploadFolder').click()">📁 Elegir carpeta</button>
+        <div class="med-hint">DeepSeek V4 Pro es el modelo por defecto. Si no queda
+        conforme con el informe, puede regenerarlo con <strong>Opus 4.8</strong>.</div>
+        <div id="aiResult" style="margin-top:12px"></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="tab-panel${tabActive("laboratorio")}" id="tab-laboratorio">
+    <div class="card">
+      <div class="card-header">📊 Tablas comparativas (evolución por mes/año)</div>
+      <div class="card-body">${renderTables(d)}</div>
+    </div>
+    <div class="card">
+      <div class="card-header">📈 Evolución temporal (gráficos)</div>
+      <div class="card-body">${renderCharts(a)}</div>
+    </div>
+  </div>
+
+  <div class="tab-panel${tabActive("hallazgos")}" id="tab-hallazgos">
+    <div class="card">
+      <div class="card-header">🔴 Hallazgos anormales (por severidad)</div>
+      <div class="card-body">
+        ${a.findings.length ? a.findings.map(renderFinding).join("") : `<p style="color:var(--green);font-weight:600">No se detectaron valores fuera de rango en la última evaluación.</p>`}
+      </div>
+    </div>
+    <div class="card">
+      <div class="card-header">🩺 Evaluación por sistemas</div>
+      <div class="card-body">${a.systems.map(renderSystem).join("")}</div>
+    </div>
+    <div class="card">
+      <div class="card-header">✅ Recomendaciones y próximos pasos (por urgencia)</div>
+      <div class="card-body">
+        ${a.recommendations.map(renderRec).join("")}
+        <div class="legend-note legend-dots">
+          <span style="background:var(--red)"></span> urgente / alto riesgo
+          <span style="background:var(--yellow)"></span> precaución / seguimiento
+          <span style="background:var(--green)"></span> hábitos saludables
         </div>
-        <label class="up-mode"><input type="checkbox" id="uploadConvertDicom" checked>
-          <span>Convertir DICOM a imagen/video antes de subir (más liviano y se ve en el navegador)</span></label>
-        <div class="med-hint">La subida comienza automáticamente al elegir o soltar archivos/carpetas.</div>
-        <input type="file" id="uploadFiles" class="upload-input" multiple
-               accept=".pdf,.jpg,.jpeg,.png,.gif,.webp,.bmp,.tif,.tiff,.dcm,.dicom,.zip,.doc,.docx,.txt,.csv"
-               onchange="onUploadPicked()">
-        <input type="file" id="uploadFolder" class="upload-input" webkitdirectory directory multiple
-               onchange="onFolderPicked()">
-        <div id="uploadFileList" class="upload-files"></div>
-      </div>
-      <div id="uploadResult"></div>
-      <form class="med-form" style="margin-top:12px" onsubmit="return fetchDicomLibrary(event)">
-        <input type="text" id="dicomLink" placeholder="O importe por link de dicomlibrary.com (…/?study=…)" style="grid-column: span 2;">
-        <button type="submit" style="grid-column: span 2;background:#6a1b9a">🌐 Importar por link</button>
-      </form>
-    </div>
-  </div>
-
-  <div class="card" id="docsCard">
-    <div class="card-header">🖼️ Estudios e imágenes adjuntos</div>
-    <div class="card-body" id="docsBody">
-      <p style="color:var(--muted)">Cargando…</p>
-    </div>
-  </div>
-
-  <div class="card" id="medsCard">
-    <div class="card-header">💊 Medicamentos del paciente</div>
-    <div class="card-body">
-      ${renderMedsForm()}
-      ${renderDrugChecks(d)}
-      <div class="med-hint">Los medicamentos se consideran en las recomendaciones:
-      se marcan posibles interacciones entre fármacos y efectos de cada medicamento
-      sobre los resultados de laboratorio (por ejemplo, estatinas y transaminasas,
-      diuréticos y potasio, biotina y TSH).</div>
-    </div>
-  </div>
-
-  <div class="card" id="aiCard">
-    <div class="card-header">🧠 Informe médico con IA</div>
-    <div class="card-body">
-      ${d.new_info && d.new_info.has_new ? `
-      <div class="drug-warning sev-border-yellow new-info-banner">
-        <div class="d-title">🆕 ${d.new_info.count} estudio(s) nuevo(s) desde el último informe</div>
-        <div>El informe IA aún no incluye esta información. Pulse “Generar / regenerar informe IA” para actualizarlo.</div>
-      </div>` : ""}
-      <div class="med-form">
-        <label style="display:flex;align-items:center;gap:6px;font-weight:600">
-          Modelo de IA:
-          <select id="aiModel" style="padding:8px;border:1px solid var(--border);border-radius:6px">
-            <option value="deepseek">DeepSeek V4 Pro</option>
-            <option value="opus">Opus 4.8</option>
-          </select>
-        </label>
-        <button id="aiGenBtn" onclick="generateAIReport()" style="background:var(--blue);color:#fff;border:none;border-radius:6px;padding:8px 16px;font-weight:600;cursor:pointer">✨ Generar informe IA</button>
-      </div>
-      <div class="med-hint">DeepSeek V4 Pro es el modelo por defecto. Si no queda
-      conforme con el informe, puede regenerarlo con <strong>Opus 4.8</strong>.</div>
-      <div id="aiResult" style="margin-top:12px"></div>
-    </div>
-  </div>
-
-  <div class="card summary-card tone-${esc(a.summary.tone)}">
-    <div class="card-header">📋 Resumen ejecutivo</div>
-    <div class="card-body"><p>${esc(a.summary.text)}</p></div>
-  </div>
-
-  <div class="card">
-    <div class="card-header">📊 Tablas comparativas (evolución por mes/año)</div>
-    <div class="card-body">
-      ${renderTables(d)}
-    </div>
-  </div>
-
-  <div class="card">
-    <div class="card-header">📈 Evolución temporal (gráficos)</div>
-    <div class="card-body">
-      ${renderCharts(a)}
-    </div>
-  </div>
-
-  <div class="card summary-card tone-${esc(a.summary.tone)}" style="display:none"></div>
-
-
-  <div class="card">
-    <div class="card-header">🔴 Hallazgos anormales (por severidad)</div>
-    <div class="card-body">
-      ${a.findings.length ? a.findings.map(renderFinding).join("") : `<p style="color:var(--green);font-weight:600">No se detectaron valores fuera de rango en la última evaluación.</p>`}
-    </div>
-  </div>
-
-  <div class="card">
-    <div class="card-header">🩺 Evaluación por sistemas</div>
-    <div class="card-body">
-      ${a.systems.map(renderSystem).join("")}
-    </div>
-  </div>
-
-  <div class="card">
-    <div class="card-header">✅ Recomendaciones y próximos pasos (por urgencia)</div>
-    <div class="card-body">
-      ${a.recommendations.map(renderRec).join("")}
-      <div class="legend-note legend-dots">
-        <span style="background:var(--red)"></span> urgente / alto riesgo
-        <span style="background:var(--yellow)"></span> precaución / seguimiento
-        <span style="background:var(--green)"></span> hábitos saludables
       </div>
     </div>
   </div>
 
-  <div class="card">
-    <div class="card-header">🗂 Historial de informes</div>
-    <div class="card-body">
-      ${d.reports.map((r) => `
-        <div class="report-item">
-          <div class="r-top">
-            <div class="r-lab">${esc(r.lab)} ${r.order_code ? "· Orden " + esc(r.order_code) : ""}</div>
-            <a class="r-download" href="/api/report/${r.id}/file" target="_blank" rel="noopener"
-               title="Descargar PDF original">⬇️ PDF</a>
+  <div class="tab-panel${tabActive("medicamentos")}" id="tab-medicamentos">
+    <div class="card" id="medsCard">
+      <div class="card-header">💊 Medicamentos del paciente</div>
+      <div class="card-body">
+        ${renderMedsForm()}
+        ${renderDrugChecks(d)}
+        <div class="med-hint">Los medicamentos se consideran en las recomendaciones:
+        se marcan posibles interacciones entre fármacos y efectos de cada medicamento
+        sobre los resultados de laboratorio (por ejemplo, estatinas y transaminasas,
+        diuréticos y potasio, biotina y TSH).</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="tab-panel${tabActive("estudios")}" id="tab-estudios">
+    <div class="card" id="uploadCard">
+      <div class="card-header">📤 Subir estudios</div>
+      <div class="card-body">
+        <div class="upload-zone">
+          <div class="upload-drop" id="uploadDrop"
+               onclick="document.getElementById('uploadFiles').click()"
+               ondragover="ev.preventDefault(); this.classList.add('drag')"
+               ondragleave="this.classList.remove('drag')"
+               ondrop="onUploadDrop(event)">
+            <span class="upload-icon">📁</span>
+            <span><strong>Arrastre archivos o carpetas aquí</strong><br>
+              o haga clic para elegir archivos · PDF de laboratorio, imágenes, DICOM u otros</span>
           </div>
-          <div class="r-date">${fmtDate(r.date)} · ${esc(r.source_file)}</div>
-          <div class="r-sections">${esc(r.sections || "")}</div>
-        </div>`).join("")}
+          <div class="upload-actions-row">
+            <button type="button" class="btn" onclick="document.getElementById('uploadFiles').click()">📄 Elegir archivos</button>
+            <button type="button" class="btn btn-ghost" onclick="document.getElementById('uploadFolder').click()">📁 Elegir carpeta</button>
+          </div>
+          <label class="up-mode"><input type="checkbox" id="uploadConvertDicom" checked>
+            <span>Convertir DICOM a imagen/video antes de subir (más liviano y se ve en el navegador)</span></label>
+          <div class="med-hint">La subida comienza automáticamente al elegir o soltar archivos/carpetas.</div>
+          <input type="file" id="uploadFiles" class="upload-input" multiple
+                 accept=".pdf,.jpg,.jpeg,.png,.gif,.webp,.bmp,.tif,.tiff,.dcm,.dicom,.zip,.doc,.docx,.txt,.csv"
+                 onchange="onUploadPicked()">
+          <input type="file" id="uploadFolder" class="upload-input" webkitdirectory directory multiple
+                 onchange="onFolderPicked()">
+          <div id="uploadFileList" class="upload-files"></div>
+        </div>
+        <div id="uploadResult"></div>
+        <form class="med-form" style="margin-top:12px" onsubmit="return fetchDicomLibrary(event)">
+          <input type="text" id="dicomLink" placeholder="O importe por link de dicomlibrary.com (…/?study=…)" style="grid-column: span 2;">
+          <button type="submit" style="grid-column: span 2;background:#6a1b9a">🌐 Importar por link</button>
+        </form>
+      </div>
+    </div>
+
+    <div class="card" id="docsCard">
+      <div class="card-header">🖼️ Estudios e imágenes adjuntos</div>
+      <div class="card-body" id="docsBody">
+        <p style="color:var(--muted)">Cargando…</p>
+      </div>
     </div>
   </div>
 
-  <div class="card" id="disclaimer">
-    <div class="card-header">⚠️ Advertencia médica</div>
-    <div class="card-body">
-      <p><strong>Este panel es generado por inteligencia artificial y NO reemplaza el
-      diagnóstico ni el tratamiento de un médico.</strong></p>
-      <p style="margin-top:8px">Los resultados de laboratorio deben ser interpretados por
-      un profesional de la salud calificado. Las recomendaciones y estadísticas citadas
-      provienen de estudios y guías publicadas, pero cada caso es individual. No modifique,
-      suspenda o inicie ningún medicamento sin consultar a su médico.</p>
-      <p style="margin-top:8px;color:var(--red);font-weight:600">Si presenta dolor de pecho,
-      dificultad para respirar, sangrado, debilidad súbita, confusión, fiebre alta o
-      cualquier síntoma grave, <strong>acuda a urgencias de inmediato</strong>.</p>
+  <div class="tab-panel${tabActive("historial")}" id="tab-historial">
+    <div class="card">
+      <div class="card-header">🗂 Historial de informes</div>
+      <div class="card-body">
+        ${d.reports.map((r) => `
+          <div class="report-item">
+            <div class="r-top">
+              <div class="r-lab">${esc(r.lab)} ${r.order_code ? "· Orden " + esc(r.order_code) : ""}</div>
+              <a class="r-download" href="/api/report/${r.id}/file" target="_blank" rel="noopener"
+                 title="Descargar PDF original">⬇️ PDF</a>
+            </div>
+            <div class="r-date">${fmtDate(r.date)} · ${esc(r.source_file)}</div>
+            <div class="r-sections">${esc(r.sections || "")}</div>
+          </div>`).join("")}
+      </div>
     </div>
-  </div>`;
+  </div>
 
-  // charts después de insertar el HTML
-  renderChartsInit(a);
+  <div id="printRoot"></div>`;
+
+  // gráficos: inicializar solo al abrir la pestaña Laboratorio (evita size 0)
+  state._chartsInited = false;
+  if (state._tab === "laboratorio") initChartsLazy();
   // documentos (carpetas requieren fetch del listado)
   renderDocuments(d).then((html) => {
     const body = document.getElementById("docsBody");
@@ -349,6 +357,97 @@ function renderPerson() {
   });
   // auto-cargar informe IA guardado (silent, no bloquea)
   autoLoadAIReport();
+}
+
+/* ---------------- tabs + datos vitales + PDF ---------------- */
+
+function switchTab(name) {
+  state._tab = name;
+  document.querySelectorAll(".tab").forEach((b) =>
+    b.classList.toggle("active", b.dataset.tab === name));
+  document.querySelectorAll(".tab-panel").forEach((p) =>
+    p.classList.toggle("active", p.id === "tab-" + name));
+  if (name === "laboratorio") initChartsLazy();
+}
+
+function initChartsLazy() {
+  if (state._chartsInited || !state.detail) return;
+  state._chartsInited = true;
+  renderChartsInit(state.detail.assessment);
+}
+
+async function saveMetrics() {
+  const pid = state.current;
+  const val = (id) => {
+    const el = document.getElementById(id);
+    return el ? el.value : "";
+  };
+  const body = {
+    birth_date: val("mBirth").trim(),
+    weight_kg: val("mWeight") === "" ? null : parseFloat(val("mWeight")),
+    height_cm: val("mHeight") === "" ? null : parseFloat(val("mHeight")),
+    bp: val("mBp").trim(),
+    hr: val("mHr") === "" ? null : parseInt(val("mHr"), 10),
+  };
+  const res = await api(`/api/person/${pid}/metrics`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  if (res.error) { toast("Error: " + res.error, "red"); return; }
+  state.detail = await api(`/api/person/${pid}`);
+  await loadPersons();
+  renderPerson();
+  toast("Datos guardados", "green");
+}
+
+async function downloadFullPDF() {
+  const d = state.detail, p = d.person, a = d.assessment;
+  const aiHtml = ($("#aiResult") && $("#aiResult").innerHTML.trim())
+    ? $("#aiResult").innerHTML
+    : "<p>Sin informe IA generado.</p>";
+  // gráficos -> imágenes base64
+  let chartsHtml = "<p>Sin gráficos disponibles.</p>";
+  const grid = $("#chartGrid");
+  if (grid && grid.querySelectorAll("canvas").length) {
+    chartsHtml = [...grid.querySelectorAll(".chart-box")].map((box) => {
+      const canvas = box.querySelector("canvas");
+      const img = canvas ? canvas.toDataURL("image/png") : null;
+      return `<div class="pdf-chart"><h4>${esc((box.querySelector("h4") || {}).textContent || "")}</h4>` +
+        (img ? `<img src="${img}" style="max-width:100%">` : "") + `</div>`;
+    }).join("");
+  }
+  const meds = (d.meds && d.meds.length)
+    ? `<ul>${d.meds.map((m) =>
+        `<li>${esc(m.name)}${m.dose ? " · " + esc(m.dose) : ""}${m.frequency ? " · " + esc(m.frequency) : ""}</li>`).join("")}</ul>`
+    : "<p>Sin medicamentos registrados.</p>";
+  const hist = d.reports.map((r) =>
+    `<li>${esc(r.lab)} · ${fmtDate(r.date)} · ${esc(r.source_file || "")}</li>`).join("");
+  const bpLine = (p.bp ? " · PA " + esc(p.bp) : "")
+    + (p.hr ? " · Pulso " + esc(p.hr) + " bpm" : "")
+    + (p.weight_kg ? " · " + esc(p.weight_kg) + " kg" : "")
+    + (p.height_cm ? " · " + esc(p.height_cm) + " cm" : "");
+  $("#printRoot").innerHTML = `
+    <div style="margin-bottom:16px">
+      <h1>${esc(p.name)}</h1>
+      <p class="pdf-meta">${p.sex ? "Sexo: " + (p.sex === "M" ? "Masculino" : "Femenino") + " · " : ""}Edad: ${p.age ? p.age + " años" : "—"}${bpLine}</p>
+    </div>
+    <h2>Resumen ejecutivo</h2>
+    <p>${esc(a.summary.text)}</p>
+    <h2>Informe médico con IA</h2>
+    ${aiHtml}
+    ${a.findings.length ? `<h2>Hallazgos anormales</h2>${a.findings.map(renderFinding).join("")}` : ""}
+    <h2>Evaluación por sistemas</h2>
+    ${a.systems.map(renderSystem).join("")}
+    <h2>Recomendaciones</h2>
+    ${a.recommendations.map(renderRec).join("")}
+    <h2>Medicamentos</h2>
+    ${meds}
+    <h2>Evolución (gráficos)</h2>
+    ${chartsHtml}
+    <h2>Historial de informes</h2>
+    <ul>${hist}</ul>`;
+  window.print();
 }
 
 /* ---------------- medicamentos ---------------- */
@@ -1015,6 +1114,8 @@ async function uploadBatch() {
       toast("Se creó un paciente nuevo por el nombre del informe", "yellow");
       selectPerson(movedCreated);
     }
+    // encolar regeneración del informe IA en segundo plano (no bloquea)
+    ensureAIRepos();
   } catch (e) {
     box.innerHTML = `<div class="drug-warning sev-border-red"><div class="d-title">Error</div><div>${esc(e.message)}</div></div>`;
   } finally {
@@ -1091,6 +1192,44 @@ async function doLogout() {
 
 /* ---------------- init ---------------- */
 
+/* ---------------- informes IA en segundo plano ---------------- */
+
+async function ensureAIRepos() {
+  try {
+    const res = await fetch("/api/ensure-ai-reports", {
+      method: "POST", credentials: "same-origin",
+    });
+    if (!res.ok) return;
+    const d = await res.json();
+    if (d.pending && d.pending.length) {
+      toast(`🔄 ${d.pending.length} informe(s) IA en segundo plano…`, "yellow");
+    }
+  } catch (e) { /* silencioso: no bloquear navegación */ }
+}
+
+async function pollAIJobs() {
+  try {
+    const res = await fetch("/api/ai-jobs", { credentials: "same-origin" });
+    if (!res.ok) return;
+    const d = await res.json();
+    const jobs = d.jobs || {};
+    if (state.current && jobs[state.current] &&
+        jobs[state.current].status === "done") {
+      const job = jobs[state.current];
+      if (state._lastJobTs !== (job.finished_at || "")) {
+        state._lastJobTs = job.finished_at || "";
+        const pid = state.current;
+        state.detail = await api(`/api/person/${pid}`);
+        await loadPersons();
+        renderPerson();
+        toast("Informe IA actualizado en segundo plano", "green");
+      }
+    }
+  } catch (e) { /* silencioso */ }
+}
+
 document.addEventListener("DOMContentLoaded", () => {
   loadPersons();
+  ensureAIRepos();
+  setInterval(pollAIJobs, 15000);
 });

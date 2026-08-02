@@ -883,3 +883,71 @@ td .trend-flat { color: var(--muted); }
 @media (prefers-reduced-motion: reduce) {
   * { transition: none !important; animation: none !important; }
 }
+
+/* ============================================================
+   TABS — paciente
+   ============================================================ */
+.tabs {
+  display: flex; gap: 6px; flex-wrap: wrap;
+  margin-bottom: 16px; padding: 6px;
+  background: var(--surface-2, #eef1f4);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+}
+.tab {
+  border: 1px solid transparent; background: transparent;
+  color: var(--ink-2, #3a4350);
+  padding: 9px 16px; border-radius: 9px;
+  font-size: 13px; font-weight: 700; cursor: pointer;
+  transition: background .15s, color .15s, border-color .15s;
+}
+.tab:hover { background: rgba(255,255,255,.6); }
+.tab.active {
+  background: var(--surface); color: var(--serum-deep, #14532d);
+  border-color: var(--line); box-shadow: 0 1px 3px rgba(16,21,28,.08);
+}
+.tab-panel { display: none; }
+.tab-panel.active { display: block; }
+
+/* ============================================================
+   DATOS VITALES — barra del encabezado
+   ============================================================ */
+.metrics-bar {
+  display: flex; gap: 8px; flex-wrap: wrap; align-items: center;
+  margin: 14px 0 18px; padding: 12px 14px;
+  background: var(--surface-2, #f2f5f7);
+  border: 1px dashed var(--line);
+  border-radius: 12px;
+}
+.metrics-bar input {
+  padding: 8px 10px; border: 1px solid var(--line);
+  border-radius: 8px; font-size: 13px; background: var(--surface);
+  min-width: 0; flex: 0 1 150px;
+}
+.metrics-bar input:focus { outline: 2px solid var(--serum, #2e7d32); border-color: transparent; }
+.metrics-bar .btn { flex: none; }
+
+/* ============================================================
+   PDF completo (impresión)
+   ============================================================ */
+#printRoot { display: none; }
+@media print {
+  body * { visibility: hidden; }
+  #printRoot, #printRoot * { visibility: visible; }
+  #printRoot {
+    display: block !important;
+    position: absolute; left: 0; top: 0; width: 100%;
+    color: #111; font-family: Georgia, "Times New Roman", serif;
+    padding: 24px;
+  }
+  #printRoot h1 { font-size: 24px; margin: 0 0 4px; }
+  #printRoot .pdf-meta { color: #444; font-size: 13px; margin-bottom: 20px; }
+  #printRoot h2 {
+    font-size: 16px; margin: 22px 0 8px; padding-bottom: 4px;
+    border-bottom: 2px solid #222;
+  }
+  #printRoot .pdf-chart { page-break-inside: avoid; margin: 10px 0; }
+  #printRoot .pdf-chart h4 { font-size: 13px; margin: 0 0 6px; }
+  #printRoot ul { margin: 6px 0 6px 20px; }
+  #printRoot .ai-report-body { font-size: 13px; }
+}
