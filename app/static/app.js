@@ -7,6 +7,7 @@ const state = {
   detail: null,        // /api/person/{id} response
   charts: {},
   medAutocomplete: [],
+  aiReportExists: false,   // hay informe IA guardado/renderizado
 };
 
 const $ = (sel) => document.querySelector(sel);
@@ -239,7 +240,7 @@ function renderPerson() {
       ${d.new_info && d.new_info.has_new ? `
       <div class="drug-warning sev-border-yellow new-info-banner">
         <div class="d-title">🆕 ${d.new_info.count} estudio(s) nuevo(s) desde el último informe</div>
-        <div>El informe IA aún no incluye esta información. Pulse “Regenerar (fuerza)” para actualizarlo.</div>
+        <div>El informe IA aún no incluye esta información. Pulse “Generar / regenerar informe IA” para actualizarlo.</div>
       </div>` : ""}
       <div class="med-form">
         <label style="display:flex;align-items:center;gap:6px;font-weight:600">
@@ -249,8 +250,7 @@ function renderPerson() {
             <option value="opus">Opus 4.8</option>
           </select>
         </label>
-        <button onclick="generateAIReport()" style="background:var(--blue);color:#fff;border:none;border-radius:6px;padding:8px 16px;font-weight:600;cursor:pointer">✨ Generar informe IA</button>
-        <button onclick="generateAIReport(true)" style="background:var(--gray);color:#fff;border:none;border-radius:6px;padding:8px 16px;font-weight:600;cursor:pointer">🔄 Regenerar (fuerza)</button>
+        <button id="aiGenBtn" onclick="generateAIReport()" style="background:var(--blue);color:#fff;border:none;border-radius:6px;padding:8px 16px;font-weight:600;cursor:pointer">✨ Generar informe IA</button>
       </div>
       <div class="med-hint">DeepSeek V4 Pro es el modelo por defecto. Si no queda
       conforme con el informe, puede regenerarlo con <strong>Opus 4.8</strong>.</div>
@@ -772,9 +772,13 @@ async function autoLoadAIReport() {
     if (res.status === 401) { window.location.href = "/login"; return; }
     const data = await res.json();
     if (data.error) {
+      state.aiReportExists = false;
+      updateAIButtonLabel();
       box.innerHTML = `<p style="color:var(--muted)">Sin informe generado aún. Use "Generar informe IA".</p>`;
       return;
     }
+    state.aiReportExists = true;
+    updateAIButtonLabel();
     box.innerHTML = `
       <div style="font-size:12px;color:var(--muted);margin-bottom:6px">
         ${data.saved ? '📋 Informe guardado' : '✨ Recién generado'} con <strong>${esc(data.model)}</strong> · ${esc(data.generated_at)}</div>
@@ -792,19 +796,32 @@ function renderFallbackNotice(res) {
   </div>`;
 }
 
-async function generateAIReport(force = false) {
+function updateAIButtonLabel() {
+  const btn = $("#aiGenBtn");
+  if (!btn) return;
+  btn.textContent = state.aiReportExists
+    ? "🔄 Regenerar informe IA"
+    : "✨ Generar informe IA";
+}
+
+async function generateAIReport() {
+  // Un solo botón: si ya hay informe guardado/renderizado, se REGENERA
+  // (fuerza recálculo con los datos nuevos); si no, se genera por primera vez.
+  const force = state.aiReportExists;
   const model = $("#aiModel") ? $("#aiModel").value : "deepseek";
   const box = $("#aiResult");
-  box.innerHTML = `<p style="color:var(--muted)">⏳ Generando informe con IA (${esc(model)}), puede tardar 30-90 segundos…</p>`;
+  box.innerHTML = `<p style="color:var(--muted)">⏳ ${force ? "Regenerando" : "Generando"} informe con IA (${esc(model)}), puede tardar 30-90 segundos…</p>`;
   try {
     const res = await api(`/api/person/${state.current}/ai-report?model=${encodeURIComponent(model)}&force=${force ? "true" : "false"}`, { method: "POST" });
     if (res.error) {
       box.innerHTML = `<div class="drug-warning sev-border-red"><div class="d-title">Error del servicio de IA</div><div>${esc(res.error)}</div></div>`;
       return;
     }
+    state.aiReportExists = true;
+    updateAIButtonLabel();
     box.innerHTML = `
       <div style="font-size:12px;color:var(--muted);margin-bottom:6px">
-        Generado con <strong>${esc(res.model)}</strong> · ${esc(res.generated_at)}</div>
+        ${res.saved ? "📋 Informe guardado" : "✨ Recién generado"} con <strong>${esc(res.model)}</strong> · ${esc(res.generated_at)}</div>
       ${res.fallback ? renderFallbackNotice(res) : ""}
       <div class="ai-report-body">${marked.parse(res.content)}</div>`;
   } catch (e) {
@@ -974,10 +991,10 @@ async function uploadBatch() {
       return `<div class="up-result ${r.ok ? "" : "up-err"}">${icon} <b>${esc(r.file)}</b> — ${esc(r.message || r.status)}</div>`;
     }).join("");
     const s = data.summary || {};
-    const note = s.new_reports
+    const note = (s.uploaded > 0)
       ? `<div class="drug-warning sev-border-yellow" style="margin-top:10px">
-           <div class="d-title">🆕 Se agregaron ${s.new_reports} informe(s) de laboratorio</div>
-           <div>Regenere el informe IA para que considere la información nueva.</div>
+           <div class="d-title">🆕 ${s.uploaded} archivo(s) nuevo(s) subido(s)${s.new_reports ? ` · ${s.new_reports} informe(s) de laboratorio` : ""}</div>
+           <div>⚠️ Considere <strong>regenerar el informe IA</strong> para que incluya la información nueva.</div>
          </div>`
       : "";
     const convNote = converted
@@ -985,7 +1002,7 @@ async function uploadBatch() {
       : "";
     const summaryHtml = `<div class="drug-warning sev-border-green"><div class="d-title">✅ Subida completa: ${s.uploaded || 0} archivo(s)</div></div>${convNote}${rows}${note}`;
     box.innerHTML = summaryHtml;
-    toast(s.new_reports ? `${s.new_reports} informe(s) nuevo(s) — actualice el informe IA` : "Subida completa", s.new_reports ? "yellow" : "green");
+    toast(s.uploaded > 0 ? "Subida completa — ⚠️ considere regenerar el informe IA" : "Subida completa (nada nuevo)", s.uploaded > 0 ? "yellow" : "green");
     // recargar persona (informes nuevos + documentos + aviso)
     state.detail = await api(`/api/person/${state.current}`);
     await loadPersons();
