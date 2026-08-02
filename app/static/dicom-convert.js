@@ -27,25 +27,29 @@
   'use strict';
 
   // ── DICOM tag constants ──────────────────────────────────────────
-  var TAG_TRANSFER_SYNTAX_UID     = 0x00020010;
-  var TAG_ROWS                    = 0x00280010;
-  var TAG_COLS                    = 0x00280011;
-  var TAG_BITS_ALLOCATED          = 0x00280100;
-  var TAG_BITS_STORED             = 0x00280101;
-  var TAG_HIGH_BIT                = 0x00280102;
-  var TAG_PIXEL_REPRESENTATION    = 0x00280103;
-  var TAG_PHOTOMETRIC_INTERP      = 0x00280004;
-  var TAG_SAMPLES_PER_PIXEL       = 0x00280002;
-  var TAG_PLANAR_CONFIG           = 0x00280006;
-  var TAG_NUMBER_OF_FRAMES        = 0x00280008;
-  var TAG_PIXEL_DATA              = 0x7FE00010;
-  var TAG_RESCALE_SLOPE           = 0x00281053;
-  var TAG_RESCALE_INTERCEPT       = 0x00281052;
-  var TAG_WINDOW_CENTER           = 0x00281050;
-  var TAG_WINDOW_WIDTH            = 0x00281051;
-  var TAG_ITEM                    = 0xFFFEE000;
-  var TAG_ITEM_DELIMITATION       = 0xFFFEE00D;
-  var TAG_SEQUENCE_DELIMITATION   = 0xFFFEE0DD;
+  // DICOM serializa el tag como GRUPO (LE) seguido de ELEMENTO (LE), así que
+  // dv.getUint32(offset, true) devuelve (elemento << 16) | grupo. Las
+  // constantes se definen en ESE orden para que la comparación directa con
+  // el int leído funcione.
+  var TAG_TRANSFER_SYNTAX_UID     = 0x00100002;
+  var TAG_ROWS                    = 0x00100028;
+  var TAG_COLS                    = 0x00110028;
+  var TAG_BITS_ALLOCATED          = 0x01000028;
+  var TAG_BITS_STORED             = 0x01010028;
+  var TAG_HIGH_BIT                = 0x01020028;
+  var TAG_PIXEL_REPRESENTATION    = 0x01030028;
+  var TAG_PHOTOMETRIC_INTERP      = 0x00040028;
+  var TAG_SAMPLES_PER_PIXEL       = 0x00020028;
+  var TAG_PLANAR_CONFIG           = 0x00060028;
+  var TAG_NUMBER_OF_FRAMES        = 0x00080028;
+  var TAG_PIXEL_DATA              = 0x00107FE0;
+  var TAG_RESCALE_SLOPE           = 0x10530028;
+  var TAG_RESCALE_INTERCEPT       = 0x10520028;
+  var TAG_WINDOW_CENTER           = 0x10500028;
+  var TAG_WINDOW_WIDTH            = 0x10510028;
+  var TAG_ITEM                    = 0xE000FFFE;
+  var TAG_ITEM_DELIMITATION       = 0xE00DFFFE;
+  var TAG_SEQUENCE_DELIMITATION   = 0xE0DDFFFE;
 
   // Transfer syntax UIDs
   var TS_IMPLICIT_VR_LE    = '1.2.840.10008.1.2';
@@ -259,7 +263,8 @@
     while (pos < fileSize - 3) {
       var tg = dv.getUint32(pos, true);
       pos += 4;
-      var group = (tg >> 16) & 0xFFFF;
+      // DICOM: grupo en los 16 bits bajos (se serializa primero en LE)
+      var group = tg & 0xFFFF;
 
       if (group !== 0x0002) {
         // Reached end of meta header

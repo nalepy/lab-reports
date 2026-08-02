@@ -196,6 +196,8 @@ function renderPerson() {
           <button type="button" class="btn" onclick="document.getElementById('uploadFiles').click()">📄 Elegir archivos</button>
           <button type="button" class="btn btn-ghost" onclick="document.getElementById('uploadFolder').click()">📁 Elegir carpeta</button>
         </div>
+        <label class="up-mode"><input type="checkbox" id="uploadConvertDicom" checked>
+          <span>Convertir DICOM a imagen/video antes de subir (más liviano y se ve en el navegador)</span></label>
         <div class="med-hint">La subida comienza automáticamente al elegir o soltar archivos/carpetas.</div>
         <input type="file" id="uploadFiles" class="upload-input" multiple
                accept=".pdf,.jpg,.jpeg,.png,.gif,.webp,.bmp,.tif,.tiff,.dcm,.dicom,.zip,.doc,.docx,.txt,.csv"
@@ -927,8 +929,24 @@ async function uploadBatch() {
   const files = _pendingUpload;
   if (!files.length) { toast("Seleccione o arrastre archivos/carpetas", "yellow"); return; }
   _uploadBusy = true;
+  const convertDcm = window.DicomConverter &&
+    (!document.getElementById("uploadConvertDicom") || document.getElementById("uploadConvertDicom").checked);
   const fd = new FormData();
+  let converted = 0;
   for (const f of files) {
+    const isDcm = /\.(dcm|dicom)$/i.test(f.name || "");
+    if (isDcm && convertDcm) {
+      try {
+        const res = await window.DicomConverter.convert(f, { quality: 0.92 });
+        if (res && (res.kind === "image" || res.kind === "video")) {
+          const ext = res.kind === "image" ? "jpg" : "webm";
+          const base = (f.webkitRelativePath || f.name).replace(/\.(dcm|dicom)$/i, "");
+          fd.append("files", res.blob, `${base}.${ext}`);
+          converted++;
+          continue;
+        }
+      } catch (e) { /* conversión falló: subir DICOM original */ }
+    }
     // con webkitRelativePath conservamos la estructura; el backend agrupa DICOM
     fd.append("files", f, f.webkitRelativePath || f.name);
   }
@@ -959,7 +977,10 @@ async function uploadBatch() {
            <div>Regenere el informe IA para que considere la información nueva.</div>
          </div>`
       : "";
-    const summaryHtml = `<div class="drug-warning sev-border-green"><div class="d-title">✅ Subida completa: ${s.uploaded || 0} archivo(s)</div></div>${rows}${note}`;
+    const convNote = converted
+      ? `<div class="up-result">🖼️ ${converted} DICOM convertido(s) a ${converted > 1 ? "imágenes/video" : "imagen/video"}</div>`
+      : "";
+    const summaryHtml = `<div class="drug-warning sev-border-green"><div class="d-title">✅ Subida completa: ${s.uploaded || 0} archivo(s)</div></div>${convNote}${rows}${note}`;
     box.innerHTML = summaryHtml;
     toast(s.new_reports ? `${s.new_reports} informe(s) nuevo(s) — actualice el informe IA` : "Subida completa", s.new_reports ? "yellow" : "green");
     // recargar persona (informes nuevos + documentos + aviso)
