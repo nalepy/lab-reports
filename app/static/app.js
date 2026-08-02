@@ -998,6 +998,7 @@ async function renderDocuments(d) {
         <div class="doc-meta">
           <div class="doc-name" title="${esc(doc.orig_filename)}">${icon} ${esc(doc.orig_filename)}</div>
           <div class="doc-sub">${esc(doc.notes || doc.kind)}${sizeKb ? " · " + sizeKb : ""} · ${fmtDate(doc.uploaded_at)}</div>
+          ${doc.study_date ? `<div class="doc-study-date">📅 Fecha estudio: <b>${fmtDMY(doc.study_date)}</b></div>` : ""}
           <div class="doc-actions">
             <a href="/api/documents/${doc.id}/file" target="_blank" rel="noopener">${isImage ? "Ver / abrir" : "Descargar"}</a>
             <button onclick="deleteDocument(${doc.id})" title="Eliminar">🗑</button>

@@ -44,6 +44,29 @@ def _clean_unit(u: str) -> str:
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent  # carpeta del proyecto
 
+_FALLBACK_DATE_RE = re.compile(r"(\d{1,2})/(\d{1,2})/(\d{4})")
+
+
+def _earliest_date_in_text(text: str) -> str:
+    """Fecha dd/mm/yyyy más temprana encontrada en texto.
+
+    Fallback para PDFs cuyo template el parser no reconoce (p. ej. la fecha
+    queda en 'Fecha Recep.' y report.date queda vacío). Se usa solo cuando
+    parse_pdf no devuelve ninguna fecha.
+    """
+    if not text:
+        return ""
+    dates = []
+    for m in _FALLBACK_DATE_RE.finditer(text):
+        d, mo, y = int(m.group(1)), int(m.group(2)), int(m.group(3))
+        if not (1 <= d <= 31 and 1 <= mo <= 12):
+            continue
+        try:
+            dates.append(datetime(y, mo, d).isoformat())
+        except ValueError:
+            continue
+    return min(dates) if dates else ""
+
 
 def _relative_path(p: str) -> str:
     """Convierte una ruta a forma relativa al proyecto (portable a la nube).
@@ -162,6 +185,7 @@ CREATE TABLE IF NOT EXISTS documents (
     stored_path TEXT,
     kind TEXT DEFAULT 'other',
     size INTEGER DEFAULT 0,
+    study_date TEXT DEFAULT '',
     notes TEXT DEFAULT '',
     uploaded_at TEXT DEFAULT (datetime('now')),
     FOREIGN KEY(person_id) REFERENCES persons(id)
@@ -199,6 +223,8 @@ class DB:
         self.conn.commit()
         self.migrate_paths()
         self.migrate_person_metrics()
+        self.migrate_study_date()
+        self._backfill_study_dates()
         self._prune_orphan_files()
 
     def migrate_person_metrics(self):
@@ -226,6 +252,46 @@ class DB:
                 self.conn.execute(
                     "UPDATE persons SET birth_date=? WHERE id=?", (norm, r["id"]))
                 changed = True
+        if changed:
+            self.conn.commit()
+        return changed
+
+    def migrate_study_date(self):
+        """Agrega columna study_date a documents (idempotente)."""
+        cols = {r[1] for r in self.conn.execute("PRAGMA table_info(documents)")}
+        if "study_date" not in cols:
+            self.conn.execute(
+                "ALTER TABLE documents ADD COLUMN study_date TEXT DEFAULT ''")
+            self.conn.commit()
+        return "study_date" in cols
+
+    def _backfill_study_dates(self):
+        """Rellena study_date de documentos PDF ya existentes leyendo la fecha
+        desde el texto del archivo (los nuevos se guardan al subirse)."""
+        changed = 0
+        rows = self.conn.execute(
+            "SELECT id, stored_path FROM documents WHERE kind='pdf' "
+            "AND (study_date IS NULL OR study_date='')").fetchall()
+        for r in rows:
+            abs_path = _absolute_path(r["stored_path"])
+            if not os.path.exists(abs_path):
+                continue
+            try:
+                reports = parse_pdf(abs_path)
+                dates = sorted({rep.date for rep in reports if rep.date})
+                if not dates:
+                    with fitz.open(abs_path) as pdf:
+                        text = "\n".join(p.get_text() for p in pdf)
+                    raw = _earliest_date_in_text(text)
+                    if raw:
+                        dates = [raw]
+            except Exception:  # noqa: BLE001
+                dates = []
+            if dates:
+                self.conn.execute(
+                    "UPDATE documents SET study_date=? WHERE id=?",
+                    (dates[0], r["id"]))
+                changed += 1
         if changed:
             self.conn.commit()
         return changed
@@ -438,6 +504,8 @@ class DB:
             self._upsert_file(path, sha, size, mtime)
             return {"ok": True, "file": fname, "status": "unparsed",
                     "new_reports": 0}
+        dates = sorted({r.date for r in reports if r.date})
+        study_date = dates[0] if dates else ""
 
         new_count = 0
         person_ids: set[int] = set()
@@ -488,11 +556,13 @@ class DB:
                 (pid, stored_rel)).fetchone()
             if not exists:
                 self.add_document(pid, fname, stored_rel, "pdf", size,
-                                  "Informe de laboratorio ingerido.")
+                                  "Informe de laboratorio ingerido.",
+                                  study_date=study_date)
         status = "ok" if new_count else "no_new"
         out = {"ok": True, "file": fname, "status": status,
                "new_reports": new_count,
-               "lab": reports[0].lab if reports else ""}
+               "lab": reports[0].lab if reports else "",
+               "study_date": study_date}
         # a qué paciente(s) se asignaron los informes (para detectar subida
         # en la pestaña equivocada)
         if person_ids:
@@ -679,13 +749,14 @@ class DB:
     # ------------------------------------------------------------- documents
 
     def add_document(self, pid: int, orig_filename: str, stored_path: str,
-                     kind: str = "other", size: int = 0, notes: str = "") -> int:
+                     kind: str = "other", size: int = 0, notes: str = "",
+                     study_date: str = "") -> int:
         rel = _relative_path(stored_path)
         now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")  # local, igual que ai_reports
         cur = self.conn.execute(
             "INSERT INTO documents(person_id, orig_filename, stored_path, kind, "
-            "size, notes, uploaded_at) VALUES(?,?,?,?,?,?,?)",
-            (pid, orig_filename, rel, kind, size, notes, now))
+            "size, study_date, notes, uploaded_at) VALUES(?,?,?,?,?,?,?,?)",
+            (pid, orig_filename, rel, kind, size, study_date, notes, now))
         self.conn.commit()
         return cur.lastrowid
 

@@ -442,22 +442,135 @@ def _parse_verdejo_header(doc: fitz.Document, report: Report):
     report.doctor = pairs.get("Medico", "") or ""
 
 
+_HEADER_FIELD = {
+    "paciente": "patient",
+    "nombre": "patient",
+    "documento": "doc",
+    "c i": "doc",
+    "c i nro": "doc",
+    "edad": "age",
+    "fecha": "date",
+    "fecha recep": "date",
+    "fecha recepcion": "date",
+    "medico": "doctor",
+    "medico tratante": "doctor",
+    "nro orden": "order",
+    "cod orden": "order",
+}
+
+
+def _parse_brunelli_header(doc: fitz.Document, report: Report):
+    """Cabecera tipo Brunelli: etiquetas que terminan en ':' con el valor a la
+    derecha en la MISMA línea ('Paciente : KAREN BETTINA MEZA MORINIGO',
+    'Fecha Recep. : 31/07/2026 07:13').
+
+    El nombre del paciente está SIEMPRE en la cabecera (arriba); médicos y
+    laboratorios firman al pie o en la primera línea y nunca deben confundirse
+    con el paciente.
+    """
+    lines = _page_lines(doc, 0, y_tol=1.0)
+    found = {}
+    for y, ws in lines:
+        ws = sorted(ws)
+        colons = [i for i, w in enumerate(ws) if w[1].endswith(":")]
+        if not colons:
+            continue
+        # pasada 1: qué palabras forman parte de cada etiqueta (pegadas a ':')
+        label_idx = set()
+        label_key = {}
+        for ci in colons:
+            parts = []
+            cw = ws[ci][1]
+            if cw != ":":
+                parts.insert(0, cw.rstrip(":"))
+                label_idx.add(ci)
+            px = ws[ci][0]
+            for j in range(ci - 1, -1, -1):
+                if ws[j][1].endswith(":"):
+                    break
+                if px - ws[j][0] > 40:
+                    break
+                parts.insert(0, ws[j][1])
+                label_idx.add(j)
+                px = ws[j][0]
+            label_key[ci] = _norm_key(" ".join(parts))
+        # pasada 2: valor a la derecha de cada etiqueta, en la misma línea
+        for ci in colons:
+            field = _HEADER_FIELD.get(label_key[ci])
+            if not field:
+                continue
+            val = []
+            px = ws[ci][0]
+            for j in range(ci + 1, len(ws)):
+                if ws[j][1].endswith(":") or j in label_idx:
+                    break
+                if ws[j][0] - px > 50:
+                    break
+                val.append(ws[j][1])
+                px = ws[j][0]
+            v = " ".join(val).strip()
+            if v:
+                found.setdefault(field, []).append(v)
+    report.patient_raw = (found.get("patient") or [""])[0]
+    report.patient_name = normalize_person_name(report.patient_raw)
+    report.doc = (found.get("doc") or [""])[0]
+    report.date_text = (found.get("date") or [""])[0]
+    report.date = parse_date(report.date_text)
+    m = re.search(r"(\d{1,3})\s*(?:años|anos|a\u00f1os)?",
+                  (found.get("age") or [""])[0], re.I)
+    if m:
+        report.age = int(m.group(1))
+    dr = (found.get("doctor") or [""])[0]
+    if re.search(r"[A-Za-zÁÉÍÓÚÑáéíóúñ]", dr):
+        report.doctor = dr
+    report.order_code = (found.get("order") or [""])[0]
+    if not report.patient_name:
+        first = clean_text(doc[0].get_text())
+        m = re.search(r"([A-ZÁÉÍÓÚÑ][A-ZÁÉÍÓÚÑ .']+)\s*\n", first)
+        if m and not _is_lab_like(m.group(1).strip()):
+            report.patient_raw = m.group(1).strip()
+            report.patient_name = normalize_person_name(report.patient_raw)
+
+
+def _parse_brunelli(doc: fitz.Document, report: Report):
+    report.lab = "Brunelli"
+    _parse_brunelli_header(doc, report)
+    start_y = 0.0
+    for y, ws in _page_lines(doc, 0, y_tol=1.0):
+        name = " ".join(w for x, w in sorted(ws) if x < 140).strip()
+        if _norm_key(name) == "analisis":
+            start_y = y + 1.0
+            break
+    _parse_verdejo_results(doc, report, start_y=start_y,
+                           cols=(140, 258, 310, 450), scaled_units=False)
+
+
 def _parse_verdejo(doc: fitz.Document, report: Report):
     report.lab = "Verdejo"
     _parse_verdejo_header(doc, report)
+    _parse_verdejo_results(doc, report)
 
-    # columns (x): name<200, result 200-290, unit 290-330, method 330-450, ref>450
+
+def _parse_verdejo_results(doc: fitz.Document, report: Report,
+                           start_y: float = 0.0,
+                           cols: tuple = (200, 290, 335, 450),
+                           scaled_units: bool = True):
+    # columns (x): name<cols0, result cols0-cols1, unit cols1-cols2,
+    #              method cols2-cols3, ref>cols3
+    name_c, res_c, unit_c, meth_c = cols
     section = "GENERAL"
     pending_method = ""
     pending_ref = ""
     pending_unit = ""
     for pno in range(len(doc)):
         for y, ws in _page_lines(doc, pno, y_tol=1.5):
-            name_words = [w for x, w in ws if x < 200]
-            res_words = [w for x, w in ws if 200 <= x < 290]
-            unit_words = [w for x, w in ws if 290 <= x < 335]
-            meth_words = [w for x, w in ws if 335 <= x < 450]
-            ref_words = [w for x, w in ws if x >= 450]
+            if pno == 0 and y < start_y:
+                continue
+            name_words = [w for x, w in ws if x < name_c]
+            res_words = [w for x, w in ws if name_c <= x < res_c]
+            unit_words = [w for x, w in ws if res_c <= x < unit_c]
+            meth_words = [w for x, w in ws if unit_c <= x < meth_c]
+            ref_words = [w for x, w in ws if x >= meth_c]
             name = " ".join(name_words).strip()
             res = " ".join(res_words).strip()
             unit = " ".join(unit_words).strip()
@@ -483,8 +596,13 @@ def _parse_verdejo(doc: fitz.Document, report: Report):
                 continue
 
             # test row
-            value = parse_number(res, unit)
-            low, high = parse_range(ref if ref else pending_ref, unit)
+            punit = unit
+            if not scaled_units:
+                # unidades simples (p. ej. "p/ul"): los puntos son decimales
+                punit = re.sub(r"(10e[0-9]+|10³|10⁶|x10[³⁶]?|mm3|/ul|/µl|/μl)",
+                               "", unit, flags=re.I)
+            value = parse_number(res, punit)
+            low, high = parse_range(ref if ref else pending_ref, punit)
             if not ref:
                 ref = pending_ref.strip()
             qual = None
@@ -937,6 +1055,8 @@ def detect_format(path: str) -> str:
     t = _norm_key(text)
     if "angiotomografia" in t or ("angiotac" in t and "medi" in t):
         return "medvital"
+    if "brunelli" in t:
+        return "brunelli"
     if "laboratoriocurie" in t or "sanatorio italiano" in t or "ord5" in _norm_key(path) or "ord6" in _norm_key(path):
         return "curie"
     if "ypacarai" in t and "valores obtenidos" in t:
@@ -964,6 +1084,10 @@ def parse_pdf(path: str) -> list[Report]:
         if fmt == "verdejo":
             r = Report(fname)
             _parse_verdejo(doc, r)
+            reports.append(r)
+        elif fmt == "brunelli":
+            r = Report(fname)
+            _parse_brunelli(doc, r)
             reports.append(r)
         elif fmt == "curie":
             r = Report(fname)

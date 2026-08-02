@@ -574,10 +574,12 @@ def _store_upload(pid: int, filename: str, content: bytes) -> dict:
         f.write(content)
     kind = _kind_for(filename)
     size = len(content)
+    study_date = ""
 
     if kind == "pdf":
         try:
             res = db.ingest(str(dest), force=False, library_dir=str(LIBRARY_DIR))
+            study_date = res.get("study_date") or ""
             if res.get("status") == "duplicate":
                 dest.unlink(missing_ok=True)
                 return {"ok": True, "file": filename, "status": "duplicate",
@@ -592,7 +594,8 @@ def _store_upload(pid: int, filename: str, content: bytes) -> dict:
                     db.add_document(
                         actual, filename, str(dest), "pdf", size,
                         "Informe de laboratorio ingerido (movido al paciente "
-                        "correcto tras detectar el nombre).")
+                        "correcto tras detectar el nombre).",
+                        study_date=study_date)
                     return {
                         "ok": True, "file": filename, "status": "moved",
                         "to_pid": actual, "to_name": to_name,
@@ -602,7 +605,8 @@ def _store_upload(pid: int, filename: str, content: bytes) -> dict:
                                     f"{to_name}{' (creado)' if created else ''}."),
                     }
                 db.add_document(pid, filename, str(dest), "pdf", size,
-                                "Informe de laboratorio ingerido.")
+                                "Informe de laboratorio ingerido.",
+                                study_date=study_date)
                 return {"ok": True, "file": filename, "status": "laboratorio",
                         "new_reports": res["new_reports"],
                         "message": f"{res['new_reports']} informe(s) ingerido(s)."}
@@ -610,7 +614,8 @@ def _store_upload(pid: int, filename: str, content: bytes) -> dict:
             pass  # PDF no parseable: queda como adjunto
 
     doc_id = db.add_document(pid, filename, str(dest), kind, size,
-                             "Estudio subido desde la web.")
+                             "Estudio subido desde la web.",
+                             study_date=study_date)
     return {"ok": True, "file": filename, "status": "document",
             "document_id": doc_id,
             "message": f"Guardado como adjunto ({kind})."}
