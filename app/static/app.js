@@ -857,7 +857,7 @@ async function renderDocuments(d) {
     const icon = doc.kind === "image" ? "🖼️" : doc.kind === "pdf" ? "📄" : doc.kind === "dicom" || doc.kind === "dicom_zip" ? "🩻" : "📎";
     return {
       ...doc,
-      folderList: `<div class="doc-thumb">${isImage ? `<img src="/api/documents/${doc.id}/file" alt="${esc(doc.orig_filename)}" loading="lazy">` : `<span class="doc-icon">${icon}</span>`}</div>
+      folderList: `${isImage ? `<div class="doc-thumb"><img src="/api/documents/${doc.id}/file" alt="${esc(doc.orig_filename)}" loading="lazy"></div>` : ""}
         <div class="doc-meta">
           <div class="doc-name" title="${esc(doc.orig_filename)}">${icon} ${esc(doc.orig_filename)}</div>
           <div class="doc-sub">${esc(doc.notes || doc.kind)}${sizeKb ? " · " + sizeKb : ""} · ${fmtDate(doc.uploaded_at)}</div>
@@ -868,7 +868,10 @@ async function renderDocuments(d) {
         </div>`,
     };
   }));
-  return `<div class="docs-grid">${items.map((doc) => `<div class="doc-item">${doc.folderList}</div>`).join("")}</div>`;
+  return `<div class="docs-grid">${items.map((doc) => {
+    const compact = !(doc.kind === "image" || doc.kind === "dicom_folder" || doc.kind === "folder");
+    return `<div class="doc-item${compact ? " doc-file" : ""}">${doc.folderList}</div>`;
+  }).join("")}</div>`;
 }
 
 async function deleteDocument(docId) {

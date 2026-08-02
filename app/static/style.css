@@ -686,6 +686,14 @@ td .trend-flat { color: var(--muted); }
 .doc-item:hover {
   box-shadow: var(--shadow); transform: translateY(-2px); border-color: #cfd6dd;
 }
+/* archivos (PDF/otros): fila compacta, sin el gran recuadro de vista previa */
+.doc-item.doc-file { grid-column: 1 / -1; }
+.doc-item.doc-file .doc-meta {
+  display: flex; align-items: center; gap: 12px; flex-wrap: wrap; padding: 12px 14px;
+}
+.doc-item.doc-file .doc-name { flex: 1; min-width: 180px; }
+.doc-item.doc-file .doc-sub { flex: 2; min-width: 160px; margin-top: 0; }
+.doc-item.doc-file .doc-actions { margin-top: 0; margin-left: auto; gap: 14px; }
 .doc-thumb {
   height: 132px; background: var(--surface-2); display: flex; align-items: center;
   justify-content: center; overflow: hidden;
