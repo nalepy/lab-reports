@@ -219,12 +219,47 @@ def _clean_name(name: str) -> str:
     return name.strip(" :,;.").upper()
 
 
+# palabras de institución/laboratorio que NUNCA son un paciente
+_LAB_INSTITUTION_RE = re.compile(
+    r"\b(LABORATORIOS?|LAB|CL[IÍ]NICA|SANATORIO|HOSPITAL|INSTITUTO|"
+    r"CENTRO\s+M[EÉ]DICO|CENTRO\s+DE|SERVI[CG]IO\s+DE|ESTUDIO\s+|"
+    r"MEDICAL\s+CENTER|FUNDACI[OÓ]N)\b",
+    re.I)
+# sufijos de razón social que indican empresa, no persona
+_LAB_SUFFIX_RE = re.compile(
+    r"(?:^|\s)(S\.?R\.?L\.?|LTDA\.?|EIRL|S\.?A\.?C\.?I\.?|"
+    r"S\.?A\.?S|C\.?I\.?F\.?A\.?)\s*$",
+    re.I)
+# nombres de laboratorio ya conocidos (pueden aparecer solos en la cabecera)
+_KNOWN_LABS = {"CURIE", "MEDVITAL", "SANACOOP", "SANISIDRO", "VERDEJO",
+               "YPACARAI", "BRUNELLI"}
+
+
+def _is_lab_like(name: str) -> bool:
+    """Detecta si un 'nombre' extraído es en realidad un laboratorio o
+    institución (p. ej. 'LABORATORIO BRUNELLI S.R.L'), no un paciente."""
+    if not name:
+        return False
+    if _LAB_INSTITUTION_RE.search(name):
+        return True
+    # razón social: sin comas de apellido, con sufijo de empresa al final
+    if _LAB_SUFFIX_RE.search(name) and "," not in name:
+        return True
+    # laboratorio conocido por sí solo (cabecera "VERDEJO")
+    if name.upper() in _KNOWN_LABS:
+        return True
+    return False
+
+
 def normalize_person_name(raw: str) -> str:
     """Normalize a patient name into a canonical 'FIRST LAST' form.
 
     Handles "ALE MEZA, NEIL" -> "NEIL ALE MEZA" and strips noise tokens.
+    Returns '' cuando el texto es un laboratorio/institución (no un paciente).
     """
     raw = _clean_name(raw)
+    if _is_lab_like(raw):
+        return ""
     if "," in raw:
         parts = [p.strip() for p in raw.split(",")]
         if len(parts) == 2 and parts[0] and parts[1]:
