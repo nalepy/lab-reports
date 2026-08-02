@@ -329,6 +329,8 @@ function renderPerson() {
     const body = document.getElementById("docsBody");
     if (body) body.innerHTML = `<p style="color:var(--muted)">No se pudieron cargar los documentos.</p>`;
   });
+  // auto-cargar informe IA guardado (silent, no bloquea)
+  autoLoadAIReport();
 }
 
 /* ---------------- medicamentos ---------------- */
@@ -705,6 +707,36 @@ function trendIcon(m) {
 
 /* ---------------- IA ---------------- */
 
+async function autoLoadAIReport() {
+  const model = $("#aiModel") ? $("#aiModel").value : "deepseek";
+  const box = $("#aiResult");
+  if (!box) return;
+  box.innerHTML = `<p style="color:var(--muted)">Cargando informe…</p>`;
+  try {
+    const res = await fetch(`/api/person/${state.current}/ai-report?model=${encodeURIComponent(model)}`, { method: "POST" });
+    if (res.status === 401) { window.location.href = "/login"; return; }
+    const data = await res.json();
+    if (data.error) {
+      box.innerHTML = `<p style="color:var(--muted)">Sin informe generado aún. Use "Generar informe IA".</p>`;
+      return;
+    }
+    box.innerHTML = `
+      <div style="font-size:12px;color:var(--muted);margin-bottom:6px">
+        ${data.saved ? '📋 Informe guardado' : '✨ Recién generado'} con <strong>${esc(data.model)}</strong> · ${esc(data.generated_at)}</div>
+      ${data.fallback ? renderFallbackNotice(data) : ""}
+      <div class="ai-report-body">${marked.parse(data.content)}</div>`;
+  } catch (e) {
+    box.innerHTML = `<p style="color:var(--muted)">No se pudo cargar el informe.</p>`;
+  }
+}
+
+function renderFallbackNotice(res) {
+  return `<div class="drug-warning sev-border-yellow" style="margin-bottom:10px">
+    <div class="d-title">⚠️ Informe local (sin conexión al servicio de IA)</div>
+    <div>${esc(res.fallback_reason || "El servicio de IA no respondió.")}</div>
+  </div>`;
+}
+
 async function generateAIReport(force = false) {
   const model = $("#aiModel") ? $("#aiModel").value : "deepseek";
   const box = $("#aiResult");
@@ -718,13 +750,7 @@ async function generateAIReport(force = false) {
     box.innerHTML = `
       <div style="font-size:12px;color:var(--muted);margin-bottom:6px">
         Generado con <strong>${esc(res.model)}</strong> · ${esc(res.generated_at)}</div>
-      ${res.fallback ? `<div class="drug-warning sev-border-yellow" style="margin-bottom:10px">
-        <div class="d-title">⚠️ Informe local (sin conexión al servicio de IA)</div>
-        <div>${esc(res.fallback_reason || "El servicio de IA no respondió.")}<br>
-        Configure una API key válida de OpenRouter en <code>data/.env</code>
-        (variable <code>OPENROUTER_API_KEY</code>) para usar DeepSeek V4 Pro u
-        Opus 4.8. Mientras tanto se muestra este informe estructurado.</div>
-      </div>` : ""}
+      ${res.fallback ? renderFallbackNotice(res) : ""}
       <div class="ai-report-body">${marked.parse(res.content)}</div>`;
   } catch (e) {
     box.innerHTML = `<div class="drug-warning sev-border-red"><div class="d-title">Error</div><div>${esc(e.message)}</div></div>`;
