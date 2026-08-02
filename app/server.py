@@ -661,7 +661,7 @@ def api_login(password: str = Form(...)):
         token = auth.create_session()
         resp = JSONResponse({"ok": True})
         resp.set_cookie(auth.COOKIE_NAME, token,
-                        httponly=True, samesite="strict",
+                        httponly=True, samesite="lax",
                         max_age=auth.SESSION_TTL)
         return resp
     return JSONResponse({"error": "Contraseña incorrecta"}, status_code=401)
