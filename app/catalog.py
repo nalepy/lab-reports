@@ -59,8 +59,20 @@ def search(q: str, limit: int = 12) -> list[dict]:
             if qn in bn:
                 matched_brand = e["brands"][i]
                 break
-        rank = 0 if starts else 1
-        scored.append((rank, e["_gen"], {
+        # orden por calidad de coincidencia: nombre exacto > prefijo de genérico
+        # > prefijo de alias > prefijo de marca > resto (contiene)
+        if e["_gen"] == qn:
+            tier = 0
+        elif e["_gen"].startswith(qn):
+            tier = 1
+        elif any(a.startswith(qn) for a in e["_aliases"] if a):
+            tier = 2
+        elif any(b.startswith(qn) for b in e["_brands"] if b):
+            tier = 3
+        else:
+            tier = 4
+        has_dose = bool(e.get("strengths"))
+        scored.append((tier, 0 if has_dose else 1, e["_gen"], {
             "generic": e.get("generic", ""),
             "brands": e.get("brands", []),
             "strengths": e.get("strengths", []),
@@ -68,5 +80,6 @@ def search(q: str, limit: int = 12) -> list[dict]:
             "key": e.get("key"),
             "matched_brand": matched_brand,
         }))
-    scored.sort(key=lambda t: (t[0], t[1]))
-    return [item for _, _, item in scored[:limit]]
+    # calidad de coincidencia > con dosis primero > alfabético
+    scored.sort(key=lambda t: (t[0], t[1], t[2]))
+    return [item for _, _, _, item in scored[:limit]]

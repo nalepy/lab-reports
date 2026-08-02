@@ -167,6 +167,8 @@ EXTRAS = {
                        "strengths": ["10 mg", "25 mg"]},
     "dapagliflozina": {"generic": "Dapagliflozina", "brands": ["Forxiga", "Farxiga"],
                        "strengths": ["5 mg", "10 mg"]},
+    "drospirenona": {"generic": "Drospirenona", "brands": ["Yasmin", "Yaz", "Drelle", "Drosbela"],
+                     "strengths": ["3 mg"]},
 }
 
 
@@ -180,17 +182,25 @@ def fetch_anvisa() -> list[list[str]]:
     return list(csv.reader(io.StringIO(text), delimiter=";"))
 
 
-def main():
-    # 1) overlay CIMA (dosis reales + marcas curadas) — leer ANTES de sobrescribir
+CIMA_OVERLAY = os.path.join(HERE, "cima_overlay.json")
+
+
+def _load_cima_overlay() -> dict:
+    """Capa de dosis reales + marcas curadas de CIMA (archivo fijo, no el
+    catálogo de salida: evita que un rebuild anterior se use a sí mismo)."""
     overlay = {}
-    if os.path.exists(OUT):
-        try:
-            prev = json.load(open(OUT, encoding="utf-8"))
-            if "CIMA" in (prev.get("source", "")):
-                for e in prev.get("drugs", []):
-                    overlay[_norm(base_inn(e["generic"]))] = e
-        except (OSError, json.JSONDecodeError):
-            pass
+    try:
+        prev = json.load(open(CIMA_OVERLAY, encoding="utf-8"))
+        for e in prev.get("drugs", []):
+            overlay[_norm(base_inn(e["generic"]))] = e
+    except (OSError, json.JSONDecodeError):
+        pass
+    return overlay
+
+
+def main():
+    # 1) overlay CIMA (dosis reales + marcas curadas)
+    overlay = _load_cima_overlay()
     print(f"overlay CIMA: {len(overlay)} genéricos con dosis")
 
     # 2) ANVISA -> agrupar por principio activo base
@@ -218,7 +228,9 @@ def main():
             continue
         n_prod += 1
         e = cat.setdefault(gk, {"generic": title(base), "brands": set(),
-                                "strengths": {}, "key": ALIASES.get(gk)})
+                                "strengths": {}, "key": ALIASES.get(gk),
+                                "_aliases": set()})
+        e["_aliases"].add(gk)
         brand = clean_brand(row[iN] or "")
         bn = _norm(brand)
         if bn and bn != gk and len(bn) >= 2:
@@ -226,10 +238,25 @@ def main():
         for label, uv in parse_strengths(row[iN] or "").items():
             e["strengths"][label] = uv
 
-    # 3) overlay CIMA: dosis reales + marcas curadas
+    def _find_target(aliases, fallback_key, generic, cat_):
+        """Localiza la entrada donde fusionar: coincide por alias normalizado."""
+        for a in aliases:
+            a = _norm(a)
+            if a and a in cat_:
+                return a
+        cand = fallback_key
+        if cand not in cat_:
+            cand = _norm(generic)
+        return cand if cand in cat_ else fallback_key
+
+    # 3) overlay CIMA: dosis reales + marcas curadas (fusiona por alias)
     for gk, o in overlay.items():
-        e = cat.setdefault(gk, {"generic": o["generic"], "brands": set(),
-                                "strengths": {}, "key": o.get("key")})
+        target = _find_target(o.get("aliases", []), gk, o["generic"], cat)
+        e = cat.setdefault(target, {"generic": o["generic"], "brands": set(),
+                                    "strengths": {}, "key": o.get("key"),
+                                    "_aliases": set()})
+        e["_aliases"].update(_norm(a) for a in o.get("aliases", []))
+        e["_aliases"].add(gk)
         e["key"] = e["key"] or o.get("key")
         for b in o.get("brands", []):
             e["brands"].add(b)
@@ -240,8 +267,12 @@ def main():
 
     # 4) extras verificados
     for gk, x in EXTRAS.items():
-        e = cat.setdefault(gk, {"generic": x["generic"], "brands": set(),
-                                "strengths": {}, "key": ALIASES.get(gk)})
+        target = _find_target([gk] + [a for a in x.get("aliases", [])], gk,
+                              x["generic"], cat)
+        e = cat.setdefault(target, {"generic": x["generic"], "brands": set(),
+                                    "strengths": {}, "key": ALIASES.get(gk),
+                                    "_aliases": set()})
+        e["_aliases"].add(gk)
         for b in x["brands"]:
             e["brands"].add(b)
         e["_cima"] = x["strengths"]  # dosis verificadas de ficha
@@ -253,10 +284,11 @@ def main():
     catalog = []
     for gk, e in cat.items():
         strengths = e.get("_cima") or sort_strengths(e["strengths"])
+        aliases = sorted(e.get("_aliases", {gk}) | {gk})
         catalog.append({
             "key": e["key"],
             "generic": e["generic"],
-            "aliases": [gk],
+            "aliases": aliases,
             "brands": sorted(set(e["brands"]), key=str.lower)[:50],
             "strengths": strengths[:24],
             "form": "",

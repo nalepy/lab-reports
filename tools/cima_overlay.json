@@ -1,0 +1,1744 @@
+{
+ "source": "CIMA (AEMPS) + curated LATAM/BR/ES brand map",
+ "count": 90,
+ "drugs": [
+  {
+   "key": "alopurinol",
+   "generic": "Alopurinol",
+   "aliases": [
+    "allopurinol",
+    "alopurinol"
+   ],
+   "brands": [
+    "Zyloric",
+    "Zyloprim"
+   ],
+   "strengths": [
+    "100 mg",
+    "200 mg",
+    "300 mg"
+   ],
+   "form": "comprimidos"
+  },
+  {
+   "key": null,
+   "generic": "Alprazolam",
+   "aliases": [
+    "alprazolam"
+   ],
+   "brands": [
+    "Xanax",
+    "Frontal",
+    "Trankimazin"
+   ],
+   "strengths": [
+    "0,25 mg",
+    "0,5 mg",
+    "1 mg",
+    "2 mg",
+    "0,75 mg/ml"
+   ],
+   "form": "comprimidos"
+  },
+  {
+   "key": "amiodarona",
+   "generic": "Amiodarona",
+   "aliases": [
+    "amiodarona",
+    "amiodarone"
+   ],
+   "brands": [
+    "Cordarone",
+    "Ancoron",
+    "Trangorex"
+   ],
+   "strengths": [
+    "200 mg",
+    "30 mg/ml"
+   ],
+   "form": "solución"
+  },
+  {
+   "key": null,
+   "generic": "Amitriptilina",
+   "aliases": [
+    "amitriptilina",
+    "amitriptyline"
+   ],
+   "brands": [
+    "Tryptanol",
+    "Elavil"
+   ],
+   "strengths": [
+    "10 mg",
+    "25 mg",
+    "50 mg",
+    "75 mg"
+   ],
+   "form": "comprimidos"
+  },
+  {
+   "key": "amlodipino",
+   "generic": "Amlodipino",
+   "aliases": [
+    "amlodipina",
+    "amlodipino",
+    "besilato de amlodipino"
+   ],
+   "brands": [
+    "Norvasc",
+    "Amlodin",
+    "Pressat",
+    "Amlo"
+   ],
+   "strengths": [
+    "5 mg",
+    "10 mg"
+   ],
+   "form": "comprimidos"
+  },
+  {
+   "key": null,
+   "generic": "Amoxicilina",
+   "aliases": [
+    "amoxicilina",
+    "amoxicillin"
+   ],
+   "brands": [
+    "Amoxil",
+    "Clamoxyl",
+    "Novamox"
+   ],
+   "strengths": [
+    "1 g",
+    "125 mg",
+    "250 mg",
+    "500 mg",
+    "750 mg",
+    "1000 mg",
+    "2000 mg"
+   ],
+   "form": "comprimidos"
+  },
+  {
+   "key": null,
+   "generic": "Amoxicilina/clavulánico",
+   "aliases": [
+    "amoxicilina acido clavulanico",
+    "amoxicilina clavulanico",
+    "co-amoxiclav"
+   ],
+   "brands": [
+    "Augmentin",
+    "Clavulin",
+    "Amoxidal Duo"
+   ],
+   "strengths": [],
+   "form": ""
+  },
+  {
+   "key": "aspirina",
+   "generic": "Aspirina",
+   "aliases": [
+    "aas",
+    "acido acetilsalicilico",
+    "aspirin",
+    "aspirina"
+   ],
+   "brands": [
+    "Aspirina",
+    "AAS",
+    "Adiro",
+    "Bufferin"
+   ],
+   "strengths": [
+    "75 mg",
+    "100 mg",
+    "300 mg"
+   ],
+   "form": "comprimidos"
+  },
+  {
+   "key": null,
+   "generic": "Atenolol",
+   "aliases": [
+    "atenolol"
+   ],
+   "brands": [
+    "Tenormin",
+    "Atenol",
+    "Ablok"
+   ],
+   "strengths": [
+    "50 mg",
+    "100 mg"
+   ],
+   "form": "comprimidos"
+  },
+  {
+   "key": "atorvastatina",
+   "generic": "Atorvastatina",
+   "aliases": [
+    "atorvastatin",
+    "atorvastatina"
+   ],
+   "brands": [
+    "Lipitor",
+    "Citalor",
+    "Torvast",
+    "Cardyl",
+    "Zarator"
+   ],
+   "strengths": [
+    "10 mg",
+    "20 mg",
+    "30 mg",
+    "40 mg",
+    "60 mg",
+    "80 mg"
+   ],
+   "form": "comprimidos"
+  },
+  {
+   "key": null,
+   "generic": "Azitromicina",
+   "aliases": [
+    "azithromycin",
+    "azitromicina"
+   ],
+   "brands": [
+    "Zithromax",
+    "Zitromax",
+    "Azitrom"
+   ],
+   "strengths": [
+    "200 mg",
+    "250 mg",
+    "500 mg",
+    "40 mg/ml"
+   ],
+   "form": "comprimidos"
+  },
+  {
+   "key": "biotina",
+   "generic": "Biotina",
+   "aliases": [
+    "biotin",
+    "biotina"
+   ],
+   "brands": [
+    "Medebiotin"
+   ],
+   "strengths": [],
+   "form": ""
+  },
+  {
+   "key": null,
+   "generic": "Bisoprolol",
+   "aliases": [
+    "bisoprolol",
+    "fumarato de bisoprolol"
+   ],
+   "brands": [
+    "Concor",
+    "Emconcor",
+    "Concardio"
+   ],
+   "strengths": [
+    "1,25 mg",
+    "2,5 mg",
+    "3,75 mg",
+    "5 mg",
+    "7,5 mg",
+    "10 mg"
+   ],
+   "form": "comprimidos"
+  },
+  {
+   "key": null,
+   "generic": "Budesonida",
+   "aliases": [
+    "budesonida",
+    "budesonide"
+   ],
+   "brands": [
+    "Pulmicort",
+    "Busonid"
+   ],
+   "strengths": [
+    "50 mcg",
+    "64 mcg",
+    "100 mcg",
+    "200 mcg",
+    "400 mcg",
+    "0,25 mg/ml",
+    "0,5 mg/ml"
+   ],
+   "form": ""
+  },
+  {
+   "key": "calcio",
+   "generic": "Calcio (carbonato)",
+   "aliases": [
+    "calcio",
+    "carbonato de calcio"
+   ],
+   "brands": [
+    "Caltrate",
+    "Calcium"
+   ],
+   "strengths": [
+    "1,5 %",
+    "2,3 %",
+    "4,25 %",
+    "600 mg",
+    "950 mg",
+    "100 mg/ml"
+   ],
+   "form": "comprimidos"
+  },
+  {
+   "key": null,
+   "generic": "Carvedilol",
+   "aliases": [
+    "carvedilol"
+   ],
+   "brands": [
+    "Coreg",
+    "Dilatrend",
+    "Divelol",
+    "Coreg"
+   ],
+   "strengths": [
+    "6,25 mg",
+    "25 mg"
+   ],
+   "form": "comprimidos"
+  },
+  {
+   "key": null,
+   "generic": "Cefalexina",
+   "aliases": [
+    "cefalexina",
+    "cephalexin"
+   ],
+   "brands": [
+    "Keflex",
+    "Cefaclin"
+   ],
+   "strengths": [
+    "250 mg",
+    "500 mg"
+   ],
+   "form": "cápsulas"
+  },
+  {
+   "key": null,
+   "generic": "Cetirizina",
+   "aliases": [
+    "cetirizina",
+    "cetirizine"
+   ],
+   "brands": [
+    "Zyrtec",
+    "Reactine"
+   ],
+   "strengths": [
+    "5 mg",
+    "10 mg",
+    "1 mg/ml",
+    "10 mg/ml"
+   ],
+   "form": "comprimidos"
+  },
+  {
+   "key": null,
+   "generic": "Ciprofloxacino",
+   "aliases": [
+    "ciprofloxacin",
+    "ciprofloxacina",
+    "ciprofloxacino"
+   ],
+   "brands": [
+    "Cipro",
+    "Ciproxina",
+    "Baycip"
+   ],
+   "strengths": [
+    "1 mg",
+    "200 mg",
+    "250 mg",
+    "400 mg",
+    "500 mg",
+    "750 mg",
+    "2 mg/ml"
+   ],
+   "form": "comprimidos"
+  },
+  {
+   "key": null,
+   "generic": "Claritromicina",
+   "aliases": [
+    "clarithromycin",
+    "claritromicina"
+   ],
+   "brands": [
+    "Klaricid",
+    "Biaxin"
+   ],
+   "strengths": [
+    "250 mg",
+    "500 mg",
+    "25 mg/ml"
+   ],
+   "form": "comprimidos"
+  },
+  {
+   "key": null,
+   "generic": "Clonazepam",
+   "aliases": [
+    "clonazepam"
+   ],
+   "brands": [
+    "Rivotril",
+    "Klonopin"
+   ],
+   "strengths": [
+    "0,5 mg",
+    "1 mg",
+    "2 mg"
+   ],
+   "form": "comprimidos"
+  },
+  {
+   "key": "clopidogrel",
+   "generic": "Clopidogrel",
+   "aliases": [
+    "clopidogrel"
+   ],
+   "brands": [
+    "Plavix",
+    "Iscover"
+   ],
+   "strengths": [
+    "75 mg"
+   ],
+   "form": "comprimidos"
+  },
+  {
+   "key": null,
+   "generic": "Colchicina",
+   "aliases": [
+    "colchicina",
+    "colchicine"
+   ],
+   "brands": [
+    "Colchicine",
+    "Colchis"
+   ],
+   "strengths": [
+    "0,5 mg",
+    "1 mg"
+   ],
+   "form": "comprimidos"
+  },
+  {
+   "key": null,
+   "generic": "Dapagliflozina",
+   "aliases": [
+    "dapagliflozin",
+    "dapagliflozina"
+   ],
+   "brands": [
+    "Forxiga",
+    "Farxiga"
+   ],
+   "strengths": [
+    "5 mg",
+    "10 mg"
+   ],
+   "form": "comprimidos"
+  },
+  {
+   "key": null,
+   "generic": "Dexametasona",
+   "aliases": [
+    "dexametasona",
+    "dexamethasone"
+   ],
+   "brands": [
+    "Decadron",
+    "Fortecortin"
+   ],
+   "strengths": [
+    "0,5 mg",
+    "1 mg",
+    "4 mg",
+    "7,2 mg",
+    "8 mg",
+    "20 mg",
+    "40 mg",
+    "1 mg/ml",
+    "4 mg/ml"
+   ],
+   "form": "solución"
+  },
+  {
+   "key": null,
+   "generic": "Diazepam",
+   "aliases": [
+    "diazepam"
+   ],
+   "brands": [
+    "Valium",
+    "Valium"
+   ],
+   "strengths": [
+    "2 mg",
+    "2,5 mg",
+    "5 mg",
+    "10 mg",
+    "5 mg/ml"
+   ],
+   "form": "comprimidos"
+  },
+  {
+   "key": null,
+   "generic": "Diclofenaco",
+   "aliases": [
+    "diclofenac",
+    "diclofenaco"
+   ],
+   "brands": [
+    "Voltaren",
+    "Cataflam",
+    "Voltaren"
+   ],
+   "strengths": [
+    "10 mg",
+    "11,6 mg",
+    "23,2 mg",
+    "30 mg",
+    "50 mg",
+    "75 mg",
+    "100 mg",
+    "1 mg/ml"
+   ],
+   "form": "solución"
+  },
+  {
+   "key": "digoxina",
+   "generic": "Digoxina",
+   "aliases": [
+    "digoxin",
+    "digoxina"
+   ],
+   "brands": [
+    "Lanoxin",
+    "Digoxina"
+   ],
+   "strengths": [
+    "0,25 mg",
+    "0,25 mg/ml"
+   ],
+   "form": "comprimidos"
+  },
+  {
+   "key": null,
+   "generic": "Empagliflozina",
+   "aliases": [
+    "empagliflozin",
+    "empagliflozina"
+   ],
+   "brands": [
+    "Jardiance"
+   ],
+   "strengths": [
+    "10 mg",
+    "25 mg"
+   ],
+   "form": "comprimidos"
+  },
+  {
+   "key": "enalapril",
+   "generic": "Enalapril",
+   "aliases": [
+    "enalapril",
+    "enalaprilo",
+    "maleato de enalapril"
+   ],
+   "brands": [
+    "Renitec",
+    "Vasotec",
+    "Glioten",
+    "Eupressin",
+    "Renipril"
+   ],
+   "strengths": [
+    "2,5 mg",
+    "5 mg",
+    "10 mg",
+    "20 mg"
+   ],
+   "form": "comprimidos"
+  },
+  {
+   "key": null,
+   "generic": "Escitalopram",
+   "aliases": [
+    "escitalopram"
+   ],
+   "brands": [
+    "Lexapro",
+    "Cipralex"
+   ],
+   "strengths": [
+    "5 mg",
+    "10 mg",
+    "15 mg",
+    "20 mg",
+    "20 mg/ml"
+   ],
+   "form": "comprimidos"
+  },
+  {
+   "key": null,
+   "generic": "Esomeprazol",
+   "aliases": [
+    "esomeprazol",
+    "esomeprazole"
+   ],
+   "brands": [
+    "Nexium"
+   ],
+   "strengths": [
+    "20 mg",
+    "40 mg"
+   ],
+   "form": "cápsulas"
+  },
+  {
+   "key": "espirolactona",
+   "generic": "Espironolactona",
+   "aliases": [
+    "espirolactona",
+    "espironolactona",
+    "spironolactone"
+   ],
+   "brands": [
+    "Aldactone",
+    "Aldactona"
+   ],
+   "strengths": [
+    "25 mg",
+    "50 mg",
+    "100 mg"
+   ],
+   "form": "comprimidos"
+  },
+  {
+   "key": null,
+   "generic": "Ezetimiba",
+   "aliases": [
+    "ezetimiba",
+    "ezetimibe"
+   ],
+   "brands": [
+    "Ezetrol",
+    "Zetia"
+   ],
+   "strengths": [
+    "10 mg"
+   ],
+   "form": "comprimidos"
+  },
+  {
+   "key": null,
+   "generic": "Fenofibrato",
+   "aliases": [
+    "fenofibrato"
+   ],
+   "brands": [
+    "Lipidil",
+    "Secalip"
+   ],
+   "strengths": [
+    "145 mg",
+    "160 mg",
+    "200 mg"
+   ],
+   "form": "comprimidos"
+  },
+  {
+   "key": "finasterida",
+   "generic": "Finasterida",
+   "aliases": [
+    "finasterida",
+    "finasteride"
+   ],
+   "brands": [
+    "Proscar",
+    "Propecia",
+    "Finasterida"
+   ],
+   "strengths": [
+    "1 mg",
+    "5 mg"
+   ],
+   "form": "comprimidos"
+  },
+  {
+   "key": null,
+   "generic": "Fluoxetina",
+   "aliases": [
+    "fluoxetina",
+    "fluoxetine"
+   ],
+   "brands": [
+    "Prozac",
+    "Daforin",
+    "Adofen"
+   ],
+   "strengths": [
+    "20 mg"
+   ],
+   "form": "cápsulas"
+  },
+  {
+   "key": "furosemida",
+   "generic": "Furosemida",
+   "aliases": [
+    "furosemida",
+    "furosemide"
+   ],
+   "brands": [
+    "Lasix",
+    "Seguril",
+    "Furosem"
+   ],
+   "strengths": [
+    "20 mg",
+    "40 mg",
+    "250 mg"
+   ],
+   "form": "comprimidos"
+  },
+  {
+   "key": null,
+   "generic": "Gabapentina",
+   "aliases": [
+    "gabapentin",
+    "gabapentina"
+   ],
+   "brands": [
+    "Neurontin",
+    "Gabapentin"
+   ],
+   "strengths": [
+    "100 mg",
+    "300 mg",
+    "400 mg",
+    "600 mg",
+    "800 mg"
+   ],
+   "form": "cápsulas"
+  },
+  {
+   "key": null,
+   "generic": "Gemfibrozilo",
+   "aliases": [
+    "gemfibrozil",
+    "gemfibrozilo"
+   ],
+   "brands": [
+    "Lopid"
+   ],
+   "strengths": [
+    "600 mg",
+    "900 mg"
+   ],
+   "form": "comprimidos"
+  },
+  {
+   "key": "glibenclamida",
+   "generic": "Glibenclamida",
+   "aliases": [
+    "glibenclamida",
+    "glibenclamide",
+    "gliburida"
+   ],
+   "brands": [
+    "Daonil",
+    "Euglucon"
+   ],
+   "strengths": [],
+   "form": ""
+  },
+  {
+   "key": null,
+   "generic": "Gliclazida",
+   "aliases": [
+    "gliclazida",
+    "gliclazide"
+   ],
+   "brands": [
+    "Diamicron"
+   ],
+   "strengths": [
+    "30 mg",
+    "60 mg"
+   ],
+   "form": "comprimidos"
+  },
+  {
+   "key": null,
+   "generic": "Glimepirida",
+   "aliases": [
+    "glimepirida",
+    "glimepiride"
+   ],
+   "brands": [
+    "Amaryl",
+    "Amaryl"
+   ],
+   "strengths": [
+    "2 mg",
+    "4 mg"
+   ],
+   "form": "comprimidos"
+  },
+  {
+   "key": "hidroclorotiazida",
+   "generic": "Hidroclorotiazida",
+   "aliases": [
+    "hctz",
+    "hidroclorotiazida"
+   ],
+   "brands": [
+    "Esidrix",
+    "Clorana",
+    "Diurex"
+   ],
+   "strengths": [
+    "12,5 mg",
+    "16 mg",
+    "20 mg",
+    "25 mg",
+    "32 mg",
+    "40 mg",
+    "50 mg",
+    "80 mg",
+    "100 mg",
+    "150 mg",
+    "160 mg",
+    "300 mg",
+    "320 mg"
+   ],
+   "form": "comprimidos"
+  },
+  {
+   "key": "hierro",
+   "generic": "Hierro (sulfato ferroso)",
+   "aliases": [
+    "hierro",
+    "hierro sulfato",
+    "sulfato ferroso"
+   ],
+   "brands": [
+    "Ferro-Gradumet",
+    "Tardyferon",
+    "Ferplex"
+   ],
+   "strengths": [],
+   "form": ""
+  },
+  {
+   "key": "ibuprofeno",
+   "generic": "Ibuprofeno",
+   "aliases": [
+    "ibuprofen",
+    "ibuprofeno"
+   ],
+   "brands": [
+    "Advil",
+    "Motrin",
+    "Alivium",
+    "Espidifen"
+   ],
+   "strengths": [
+    "20 mg",
+    "50 mg",
+    "100 mg",
+    "200 mg",
+    "300 mg",
+    "400 mg",
+    "600 mg",
+    "5 mg/ml",
+    "20 mg/ml",
+    "40 mg/ml",
+    "200 mg/ml"
+   ],
+   "form": "comprimidos"
+  },
+  {
+   "key": "insulina",
+   "generic": "Insulina glargina",
+   "aliases": [
+    "insulina",
+    "insulina glargina"
+   ],
+   "brands": [
+    "Lantus",
+    "Basaglar",
+    "Toujeo"
+   ],
+   "strengths": [],
+   "form": ""
+  },
+  {
+   "key": null,
+   "generic": "Irbesartán",
+   "aliases": [
+    "irbesartan",
+    "irbesartana"
+   ],
+   "brands": [
+    "Aprovel",
+    "Avapro",
+    "Karvea"
+   ],
+   "strengths": [
+    "75 mg",
+    "150 mg",
+    "300 mg"
+   ],
+   "form": "comprimidos"
+  },
+  {
+   "key": null,
+   "generic": "Ketorolaco",
+   "aliases": [
+    "ketorolac",
+    "ketorolaco"
+   ],
+   "brands": [
+    "Toradol",
+    "Dolac"
+   ],
+   "strengths": [
+    "10 mg",
+    "30 mg/ml"
+   ],
+   "form": "solución"
+  },
+  {
+   "key": null,
+   "generic": "Levetiracetam",
+   "aliases": [
+    "levetiracetam"
+   ],
+   "brands": [
+    "Keppra"
+   ],
+   "strengths": [
+    "250 mg",
+    "500 mg",
+    "750 mg",
+    "1000 mg",
+    "1500 mg",
+    "5 mg/ml",
+    "100 mg/ml"
+   ],
+   "form": "solución"
+  },
+  {
+   "key": null,
+   "generic": "Levofloxacino",
+   "aliases": [
+    "levofloxacin",
+    "levofloxacina",
+    "levofloxacino"
+   ],
+   "brands": [
+    "Levaquin",
+    "Tavanic"
+   ],
+   "strengths": [
+    "250 mg",
+    "500 mg",
+    "5 mg/ml"
+   ],
+   "form": "comprimidos"
+  },
+  {
+   "key": "anticonceptivos",
+   "generic": "Levonorgestrel/etinilestradiol",
+   "aliases": [
+    "anovulatorios",
+    "anticonceptivo",
+    "anticonceptivos"
+   ],
+   "brands": [
+    "Microgynon",
+    "Nordette"
+   ],
+   "strengths": [],
+   "form": ""
+  },
+  {
+   "key": "levotiroxina",
+   "generic": "Levotiroxina",
+   "aliases": [
+    "levothyroxine",
+    "levotiroxina",
+    "levotiroxina sodica"
+   ],
+   "brands": [
+    "Eutirox",
+    "Synthroid",
+    "Puran T4",
+    "Levoid"
+   ],
+   "strengths": [
+    "25 mcg",
+    "50 mcg",
+    "75 mcg",
+    "88 mcg",
+    "100 mcg",
+    "112 mcg",
+    "125 mcg",
+    "137 mcg",
+    "150 mcg",
+    "175 mcg",
+    "200 mcg",
+    "500 mcg"
+   ],
+   "form": "comprimidos"
+  },
+  {
+   "key": null,
+   "generic": "Loratadina",
+   "aliases": [
+    "loratadina",
+    "loratadine"
+   ],
+   "brands": [
+    "Claritin",
+    "Claritine",
+    "Loratadina"
+   ],
+   "strengths": [
+    "0,5 mg",
+    "5 mg",
+    "10 mg",
+    "0,5 mg/ml",
+    "1 mg/ml"
+   ],
+   "form": "comprimidos"
+  },
+  {
+   "key": "losartan",
+   "generic": "Losartán",
+   "aliases": [
+    "losartan",
+    "losartan potasico",
+    "losartana"
+   ],
+   "brands": [
+    "Cozaar",
+    "Aradois",
+    "Corus",
+    "Losacor",
+    "Torlos",
+    "Loriax"
+   ],
+   "strengths": [
+    "12,5 mg",
+    "25 mg",
+    "50 mg",
+    "100 mg"
+   ],
+   "form": "comprimidos"
+  },
+  {
+   "key": null,
+   "generic": "Metamizol (dipirona)",
+   "aliases": [
+    "dipirona",
+    "dipirona sodica",
+    "metamizol",
+    "metamizol sodico"
+   ],
+   "brands": [
+    "Nolotil",
+    "Novalgina",
+    "Dorona",
+    "Buscapina Composta"
+   ],
+   "strengths": [
+    "0,4 g",
+    "1 g",
+    "500 mg",
+    "575 mg",
+    "500 mg/ml"
+   ],
+   "form": "cápsulas"
+  },
+  {
+   "key": "metformina",
+   "generic": "Metformina",
+   "aliases": [
+    "clorhidrato de metformina",
+    "metformin",
+    "metformina"
+   ],
+   "brands": [
+    "Glucophage",
+    "Glifage",
+    "Dimefor",
+    "Dianben",
+    "Glucofage"
+   ],
+   "strengths": [
+    "500 mg",
+    "850 mg",
+    "1000 mg"
+   ],
+   "form": "comprimidos"
+  },
+  {
+   "key": null,
+   "generic": "Metoprolol",
+   "aliases": [
+    "metoprolol",
+    "tartrato de metoprolol"
+   ],
+   "brands": [
+    "Lopressor",
+    "Betaloc",
+    "Seloken",
+    "Selozok"
+   ],
+   "strengths": [
+    "95 mg",
+    "100 mg"
+   ],
+   "form": "comprimidos"
+  },
+  {
+   "key": null,
+   "generic": "Metronidazol",
+   "aliases": [
+    "metronidazol",
+    "metronidazole"
+   ],
+   "brands": [
+    "Flagyl",
+    "Flagystatin"
+   ],
+   "strengths": [
+    "7,5 mg",
+    "250 mg",
+    "5 mg/ml"
+   ],
+   "form": "comprimidos"
+  },
+  {
+   "key": null,
+   "generic": "Montelukast",
+   "aliases": [
+    "montelukast"
+   ],
+   "brands": [
+    "Singulair",
+    "Montelair"
+   ],
+   "strengths": [
+    "4 mg",
+    "5 mg",
+    "10 mg"
+   ],
+   "form": "comprimidos"
+  },
+  {
+   "key": null,
+   "generic": "Naproxeno",
+   "aliases": [
+    "naproxen",
+    "naproxeno"
+   ],
+   "brands": [
+    "Naprosyn",
+    "Flanax",
+    "Aleve"
+   ],
+   "strengths": [
+    "500 mg",
+    "550 mg",
+    "50 mg/ml"
+   ],
+   "form": "comprimidos"
+  },
+  {
+   "key": null,
+   "generic": "Nifedipino",
+   "aliases": [
+    "nifedipina",
+    "nifedipino"
+   ],
+   "brands": [
+    "Adalat",
+    "Cardifen"
+   ],
+   "strengths": [
+    "20 mg"
+   ],
+   "form": "comprimidos"
+  },
+  {
+   "key": null,
+   "generic": "Nitrofurantoína",
+   "aliases": [
+    "nitrofurantoin",
+    "nitrofurantoina"
+   ],
+   "brands": [
+    "Macrodantina",
+    "Furadantina"
+   ],
+   "strengths": [],
+   "form": ""
+  },
+  {
+   "key": "omeprazol",
+   "generic": "Omeprazol",
+   "aliases": [
+    "omeprazol",
+    "omeprazole"
+   ],
+   "brands": [
+    "Losec",
+    "Prilosec",
+    "Peprazol",
+    "Gastrium"
+   ],
+   "strengths": [
+    "10 mg",
+    "20 mg",
+    "40 mg"
+   ],
+   "form": "cápsulas"
+  },
+  {
+   "key": null,
+   "generic": "Pantoprazol",
+   "aliases": [
+    "pantoprazol",
+    "pantoprazole"
+   ],
+   "brands": [
+    "Protonix",
+    "Pantozol",
+    "Pantecta"
+   ],
+   "strengths": [
+    "20 mg",
+    "40 mg"
+   ],
+   "form": "comprimidos"
+  },
+  {
+   "key": "paracetamol",
+   "generic": "Paracetamol",
+   "aliases": [
+    "acetaminofen",
+    "acetaminofeno",
+    "paracetamol"
+   ],
+   "brands": [
+    "Tylenol",
+    "Panadol",
+    "Gelocatil",
+    "Tempra"
+   ],
+   "strengths": [
+    "1 g",
+    "37,5 mg",
+    "250 mg",
+    "500 mg",
+    "650 mg",
+    "1000 mg",
+    "10 mg/ml",
+    "100 mg/ml"
+   ],
+   "form": "comprimidos"
+  },
+  {
+   "key": null,
+   "generic": "Paroxetina",
+   "aliases": [
+    "paroxetina",
+    "paroxetine"
+   ],
+   "brands": [
+    "Paxil",
+    "Aropax",
+    "Seroxat"
+   ],
+   "strengths": [
+    "10 mg",
+    "20 mg",
+    "30 mg",
+    "40 mg"
+   ],
+   "form": "comprimidos"
+  },
+  {
+   "key": null,
+   "generic": "Pravastatina",
+   "aliases": [
+    "pravastatina"
+   ],
+   "brands": [
+    "Pravacol",
+    "Pravacol"
+   ],
+   "strengths": [
+    "10 mg",
+    "20 mg",
+    "40 mg"
+   ],
+   "form": "comprimidos"
+  },
+  {
+   "key": null,
+   "generic": "Prednisolona",
+   "aliases": [
+    "prednisolona",
+    "prednisolone"
+   ],
+   "brands": [
+    "Prelone",
+    "Estilsona"
+   ],
+   "strengths": [
+    "1 mg",
+    "4 mg",
+    "16 mg",
+    "20 mg",
+    "40 mg",
+    "5 mg/ml"
+   ],
+   "form": "solución"
+  },
+  {
+   "key": "prednisona",
+   "generic": "Prednisona",
+   "aliases": [
+    "prednisona",
+    "prednisone"
+   ],
+   "brands": [
+    "Meticorten",
+    "Deltasone"
+   ],
+   "strengths": [
+    "2,5 mg",
+    "5 mg",
+    "10 mg",
+    "30 mg",
+    "50 mg"
+   ],
+   "form": "comprimidos"
+  },
+  {
+   "key": null,
+   "generic": "Pregabalina",
+   "aliases": [
+    "pregabalin",
+    "pregabalina"
+   ],
+   "brands": [
+    "Lyrica"
+   ],
+   "strengths": [
+    "25 mg",
+    "50 mg",
+    "75 mg",
+    "100 mg",
+    "150 mg",
+    "200 mg",
+    "225 mg",
+    "300 mg",
+    "20 mg/ml"
+   ],
+   "form": "cápsulas"
+  },
+  {
+   "key": null,
+   "generic": "Propranolol",
+   "aliases": [
+    "propranolol"
+   ],
+   "brands": [
+    "Inderal",
+    "Sumial"
+   ],
+   "strengths": [
+    "10 mg",
+    "40 mg"
+   ],
+   "form": "comprimidos"
+  },
+  {
+   "key": null,
+   "generic": "Quetiapina",
+   "aliases": [
+    "quetiapina",
+    "quetiapine"
+   ],
+   "brands": [
+    "Seroquel"
+   ],
+   "strengths": [
+    "25 mg",
+    "50 mg",
+    "100 mg",
+    "150 mg",
+    "200 mg",
+    "300 mg",
+    "400 mg",
+    "600 mg",
+    "20 mg/ml"
+   ],
+   "form": "comprimidos"
+  },
+  {
+   "key": null,
+   "generic": "Ranitidina",
+   "aliases": [
+    "ranitidina",
+    "ranitidine"
+   ],
+   "brands": [
+    "Zantac",
+    "Label"
+   ],
+   "strengths": [
+    "10 mg",
+    "75 mg",
+    "150 mg",
+    "300 mg"
+   ],
+   "form": "comprimidos"
+  },
+  {
+   "key": "rosuvastatina",
+   "generic": "Rosuvastatina",
+   "aliases": [
+    "rosuvastatin",
+    "rosuvastatina"
+   ],
+   "brands": [
+    "Crestor",
+    "Rosucard",
+    "Provisacor"
+   ],
+   "strengths": [
+    "5 mg",
+    "10 mg",
+    "15 mg",
+    "20 mg",
+    "30 mg",
+    "40 mg"
+   ],
+   "form": "comprimidos"
+  },
+  {
+   "key": "salbutamol",
+   "generic": "Salbutamol",
+   "aliases": [
+    "albuterol",
+    "salbutamol"
+   ],
+   "brands": [
+    "Ventolin",
+    "Aerolin"
+   ],
+   "strengths": [
+    "100 mcg",
+    "2,5 mg"
+   ],
+   "form": "solución"
+  },
+  {
+   "key": "sertralina",
+   "generic": "Sertralina",
+   "aliases": [
+    "sertralina",
+    "sertraline"
+   ],
+   "brands": [
+    "Zoloft",
+    "Besitran",
+    "Tolrest"
+   ],
+   "strengths": [
+    "50 mg",
+    "100 mg",
+    "150 mg",
+    "200 mg"
+   ],
+   "form": "comprimidos"
+  },
+  {
+   "key": "sildenafil",
+   "generic": "Sildenafil",
+   "aliases": [
+    "citrato de sildenafil",
+    "sildenafil",
+    "sildenafilo"
+   ],
+   "brands": [
+    "Viagra",
+    "Pramil",
+    "Suvvia",
+    "Revatio"
+   ],
+   "strengths": [
+    "20 mg",
+    "25 mg",
+    "50 mg",
+    "100 mg"
+   ],
+   "form": "comprimidos"
+  },
+  {
+   "key": "simvastatina",
+   "generic": "Simvastatina",
+   "aliases": [
+    "simvastatin",
+    "simvastatina",
+    "sinvastatina"
+   ],
+   "brands": [
+    "Zocor",
+    "Sinvascor",
+    "Zovast"
+   ],
+   "strengths": [
+    "10 mg",
+    "20 mg",
+    "40 mg"
+   ],
+   "form": "comprimidos"
+  },
+  {
+   "key": null,
+   "generic": "Sitagliptina",
+   "aliases": [
+    "sitagliptin",
+    "sitagliptina"
+   ],
+   "brands": [
+    "Januvia"
+   ],
+   "strengths": [
+    "25 mg",
+    "50 mg",
+    "100 mg"
+   ],
+   "form": "comprimidos"
+  },
+  {
+   "key": null,
+   "generic": "Tadalafilo",
+   "aliases": [
+    "tadalafil",
+    "tadalafilo"
+   ],
+   "brands": [
+    "Cialis",
+    "Tadora",
+    "Adcirca"
+   ],
+   "strengths": [
+    "2,5 mg",
+    "5 mg",
+    "10 mg",
+    "20 mg"
+   ],
+   "form": "comprimidos"
+  },
+  {
+   "key": "tamsulosina",
+   "generic": "Tamsulosina",
+   "aliases": [
+    "tamsulosin",
+    "tamsulosina"
+   ],
+   "brands": [
+    "Flomax",
+    "Secotex",
+    "Omnic"
+   ],
+   "strengths": [
+    "0,4 mg"
+   ],
+   "form": "cápsulas"
+  },
+  {
+   "key": null,
+   "generic": "Telmisartán",
+   "aliases": [
+    "telmisartan",
+    "telmisartana"
+   ],
+   "brands": [
+    "Micardis",
+    "Pritor",
+    "Predxal"
+   ],
+   "strengths": [
+    "20 mg",
+    "40 mg",
+    "80 mg"
+   ],
+   "form": "comprimidos"
+  },
+  {
+   "key": null,
+   "generic": "Tramadol",
+   "aliases": [
+    "clorhidrato de tramadol",
+    "tramadol"
+   ],
+   "brands": [
+    "Adolonta",
+    "Tramal",
+    "Ultram"
+   ],
+   "strengths": [
+    "37,5 mg",
+    "50 mg",
+    "100 mg",
+    "150 mg",
+    "200 mg",
+    "50 mg/ml",
+    "100 mg/ml"
+   ],
+   "form": "cápsulas"
+  },
+  {
+   "key": null,
+   "generic": "Trimetoprima/sulfametoxazol",
+   "aliases": [
+    "cotrimoxazol",
+    "sulfametoxazol trimetoprima",
+    "tmp smx"
+   ],
+   "brands": [
+    "Bactrim",
+    "Septra",
+    "Septrin"
+   ],
+   "strengths": [],
+   "form": ""
+  },
+  {
+   "key": null,
+   "generic": "Valsartán",
+   "aliases": [
+    "valsartan",
+    "valsartana"
+   ],
+   "brands": [
+    "Diovan",
+    "Tareg",
+    "Valpression"
+   ],
+   "strengths": [
+    "12,5 mg",
+    "25 mg",
+    "40 mg",
+    "80 mg",
+    "160 mg",
+    "320 mg"
+   ],
+   "form": "comprimidos"
+  },
+  {
+   "key": "vitamina b12",
+   "generic": "Vitamina B12 (cianocobalamina)",
+   "aliases": [
+    "b12",
+    "cianocobalamina",
+    "vitamina b12"
+   ],
+   "brands": [
+    "Optovite",
+    "Dodex"
+   ],
+   "strengths": [],
+   "form": ""
+  },
+  {
+   "key": "vitamina d",
+   "generic": "Vitamina D (colecalciferol)",
+   "aliases": [
+    "colecalciferol",
+    "vitamina d",
+    "vitamina d3"
+   ],
+   "brands": [
+    "Deltius",
+    "Vigantol",
+    "Hidroferol"
+   ],
+   "strengths": [
+    "800 UI",
+    "1000 UI",
+    "7000 UI",
+    "10000 UI",
+    "20000 UI",
+    "25000 UI",
+    "30000 UI",
+    "50000 UI"
+   ],
+   "form": "comprimidos"
+  },
+  {
+   "key": "warfarin",
+   "generic": "Warfarina",
+   "aliases": [
+    "warfarin",
+    "warfarina",
+    "warfarina sodica"
+   ],
+   "brands": [
+    "Coumadin",
+    "Marevan",
+    "Aldocumar"
+   ],
+   "strengths": [],
+   "form": ""
+  },
+  {
+   "key": null,
+   "generic": "Ácido fólico",
+   "aliases": [
+    "acido folico",
+    "folato"
+   ],
+   "brands": [
+    "Acfol",
+    "Folacin"
+   ],
+   "strengths": [
+    "5 mg",
+    "10 mg"
+   ],
+   "form": "comprimidos"
+  }
+ ]
+}
