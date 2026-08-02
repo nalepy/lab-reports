@@ -571,7 +571,7 @@ def _unit_from(s: str) -> str:
 
 _UNIT_RE = re.compile(
     r"(?:10[eE]?3/|10[eE]?6/|x10[36]/|10\u00b3/|10\u2076/)?\s*"
-    r"(?:mg/dL|g/dL|mg/dl|g/dl|mg%|mmol/mol|mmol/L|mEq/L|mEq/l|uL|µL|μL|"
+    r"(?:mg/dL|g/dL|mg/dl|g/dl|mg%|mg|mmol/mol|mmol/L|mEq/L|mEq/l|uL|µL|μL|"
     r"ng/mL|ng/ml|pg/dL|pg/ml|µg/dL|μg/dL|µIU/mL|μIU/mL|mU/L|U/L|U/I|"
     r"uI/mL|IU/mL|fL|pg|%|mm/h|mg/d?|dl|g|ml|l|dL|gldl|gdl|md/dl)")
 
@@ -847,10 +847,15 @@ def _parse_sanisidro(doc: fitz.Document, report: Report):
                 if lo is not None or hi is not None:
                     low, high = lo, hi
                     ref_text = ref
-            # el texto de referencia ("Inferior a 6 mg/dL") puede invadir la
-            # columna de unidad: quedarse solo con la unidad real
-            if unit and _unit_from(unit) == "" and not re.search(r"\d", unit):
-                unit = _unit_from(ref_text or "") or ""
+            # el texto de referencia ("Deseable: Inferior a 150 mg/dL") puede
+            # invadir la columna de unidad: dejar solo la unidad real y
+            # conservar el texto como referencia si no se obtuvo de otra columna
+            if unit and re.search(r"deseable|inferior|hasta|menor|mayor|"
+                                  r"superior|rango|referencia|no deseable",
+                                  unit, re.I):
+                if not ref_text:
+                    ref_text = unit
+                unit = _unit_from(unit) or ""
             report.add_test(section, tname, value, unit, low, high, ref_text,
                             raw_result=val)
 

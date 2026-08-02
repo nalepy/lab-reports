@@ -8,7 +8,39 @@ import threading
 from datetime import datetime
 from pathlib import Path
 
-from .parser import parse_pdf, person_match_tokens
+from .parser import parse_pdf, person_match_tokens, _UNIT_RE
+
+_REF_POLLUTION_RE = re.compile(
+    r"deseable|inferior|hasta|menor\s*a|mayor\s*a|superior\s*a|rango|"
+    r"referencia|no\s*deseable", re.I)
+
+# unidad anclada al FINAL del texto: los rangos de referencia terminan con la
+# unidad real ("Deseable: Inferior a 150 mg/dL" -> "mg/dL"). _UNIT_RE por sí
+# solo hace match por posición (primera coincidencia), lo que devuelve basura
+# ("Deseable" -> 'l').
+_TRAIL_UNIT_RE = re.compile(r"(?:" + _UNIT_RE.pattern + r")\s*$", re.I)
+
+
+def _clean_unit(u: str) -> str:
+    """Normaliza la unidad contaminada por texto de referencia al parsear.
+
+    Algunos formatos de laboratorio ponen el rango de referencia en la columna
+    de unidad (p. ej. 'Deseable: Inferior a 150 mg/dL'). Deja solo la unidad
+    real ('mg/dL') sin perder el texto de referencia (que queda en ref_text).
+    También corrige un typo histórico del parser ('md/dL' -> 'mg/dL').
+    """
+    if not u:
+        return ""
+    if len(u) > 12 or _REF_POLLUTION_RE.search(u):
+        # quedarse con la coincidencia MÁS LARGA que termina en el final del
+        # texto (la unidad real está al final del rango de referencia)
+        best = ""
+        for m in _UNIT_RE.finditer(u):
+            if m.end() == len(u) and len(m.group(0)) > len(best):
+                best = m.group(0).strip()
+        u = best
+    u = u.replace("md/dL", "mg/dL").replace("md/dl", "mg/dL").strip()
+    return u
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent  # carpeta del proyecto
 
@@ -415,12 +447,18 @@ class DB:
                FROM tests t JOIN reports r ON t.report_id = r.id
                WHERE r.person_id=?
                ORDER BY r.date, t.id""", (pid,)).fetchall()
-        return [dict(r) for r in rows]
+        out = [dict(r) for r in rows]
+        for t in out:
+            t["unit"] = _clean_unit(t.get("unit", ""))
+        return out
 
     def tests_for_report(self, rid: int) -> list[dict]:
         rows = self.conn.execute(
             "SELECT * FROM tests WHERE report_id=? ORDER BY id", (rid,)).fetchall()
-        return [dict(r) for r in rows]
+        out = [dict(r) for r in rows]
+        for t in out:
+            t["unit"] = _clean_unit(t.get("unit", ""))
+        return out
 
     # ------------------------------------------------------------- meds
 

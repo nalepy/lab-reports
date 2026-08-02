@@ -676,6 +676,9 @@ function renderTables(d) {
         flag: t.flag,
         date: t.date,
         qual: t.qual,
+        ref_text: t.ref_text,
+        ref_low: t.ref_low,
+        ref_high: t.ref_high,
       };
     }
   }
@@ -688,14 +691,19 @@ function renderTables(d) {
 
   const t2head = monthOrder.map((mk) => `<th>${monthLabel(mk)}</th>`).join("");
   const t2rows = rows.map((m) => {
+    const nameTip = refTooltip(m.ref_text, m.ref_low, m.ref_high, m.unit);
+    const nameCell = nameTip
+      ? `<td title="${nameTip}" style="cursor:help">${esc(m.label)}</td>`
+      : `<td>${esc(m.label)}</td>`;
     const cells = monthOrder.map((mk) => {
       const cell = byMonth[mk] && byMonth[mk][m.key];
       if (!cell) return `<td class="num"></td>`;  // no se realizó ese mes
       if (cell.value == null) return `<td class="num"></td>`;
       const cls = cell.flag === "H" ? "val-abnormal-H" : cell.flag === "L" ? "val-abnormal-L" : "";
-      return `<td class="num ${cls}" title="${esc(cell.date || "")}">${fmtNum(cell.value, cell.unit)}</td>`;
+      const tip = refTooltip(cell.ref_text, cell.ref_low, cell.ref_high, cell.unit);
+      return `<td class="num ${cls}" title="${tip || esc(cell.date || "")}"${tip ? ' style="cursor:help"' : ""}>${fmtNum(cell.value, cell.unit)}</td>`;
     }).join("");
-    return `<tr><td>${esc(m.label)}</td>${cells}</tr>`;
+    return `<tr>${nameCell}${cells}</tr>`;
   }).join("");
 
   return `
@@ -709,6 +717,16 @@ function renderTables(d) {
   mes, la celda queda vacía. Colores: <span class="flag-H">rojo = alto</span>,
   <span class="flag-L">amarillo = bajo</span>. El estado actual y el rango de referencia
   de cada valor anormal se muestran en “Hallazgos anormales”.</div>`;
+}
+
+/* texto del rango deseado de referencia para tooltips */
+function refTooltip(ref_text, low, high, unit) {
+  const t = (ref_text || "").trim();
+  if (t && t !== "-") return t;
+  if (low != null && high != null) return `Rango deseado: ${fmtNum(low, "")} – ${fmtNum(high, "")} ${esc(unit || "")}`.trim();
+  if (high != null) return `Rango deseado: inferior a ${fmtNum(high, "")} ${esc(unit || "")}`.trim();
+  if (low != null) return `Rango deseado: superior a ${fmtNum(low, "")} ${esc(unit || "")}`.trim();
+  return "";
 }
 
 /* medidor de rango de referencia — elemento firma visual.
