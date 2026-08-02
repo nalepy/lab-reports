@@ -70,6 +70,24 @@ def _relative_path(p: str) -> str:
     return p2
 
 
+def _normalize_birth(s) -> str:
+    """Normaliza una fecha de nacimiento a yyyy-mm-dd (para el date picker).
+
+    Acepta: yyyy-mm-dd, dd-mm-yyyy, dd/mm/yyyy, con 1-2 dígitos por campo.
+    Devuelve la entrada sin cambios si no reconoce el formato.
+    """
+    s = (s or "").strip()
+    if not s:
+        return ""
+    m = re.match(r"^(\d{1,2})[-/](\d{1,2})[-/](\d{4})$", s)
+    if m:
+        return f"{m.group(3)}-{int(m.group(2)):02d}-{int(m.group(1)):02d}"
+    m = re.match(r"^(\d{4})-(\d{1,2})-(\d{1,2})$", s)
+    if m:
+        return f"{m.group(1)}-{int(m.group(2)):02d}-{int(m.group(3)):02d}"
+    return s
+
+
 def _absolute_path(p: str) -> str:
     """Ruta relativa -> absoluta contra el proyecto actual."""
     if not p:
@@ -198,6 +216,15 @@ class DB:
             if name not in cols:
                 self.conn.execute(f"ALTER TABLE persons ADD COLUMN {name} {ddl}")
                 changed = True
+        # normalizar fechas de nacimiento ya guardadas (dd-mm-yyyy -> yyyy-mm-dd)
+        rows = self.conn.execute(
+            "SELECT id, birth_date FROM persons WHERE birth_date != ''").fetchall()
+        for r in rows:
+            norm = _normalize_birth(r["birth_date"])
+            if norm != r["birth_date"]:
+                self.conn.execute(
+                    "UPDATE persons SET birth_date=? WHERE id=?", (norm, r["id"]))
+                changed = True
         if changed:
             self.conn.commit()
         return changed
@@ -207,7 +234,7 @@ class DB:
                               bp: str = "", hr=None, notes: str = ""):
         """Guarda datos vitales manuales; recalcula la edad si hay nacimiento."""
         age = None
-        bd = (birth_date or "").strip()
+        bd = _normalize_birth(birth_date)
         if bd:
             try:
                 born = datetime.strptime(bd, "%Y-%m-%d").date()
