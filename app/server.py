@@ -712,9 +712,13 @@ app.mount("/static", StaticFiles(directory=str(STATIC)), name="static")
 @app.get("/")
 def index(request: Request):
     token = request.cookies.get(auth.COOKIE_NAME, "")
+    resp = FileResponse(str(STATIC / "index.html"))
+    resp.headers["Cache-Control"] = "no-store, no-cache, must-revalidate"
     if auth.validate_session(token):
-        return FileResponse(str(STATIC / "index.html"))
-    return FileResponse(str(STATIC / "login.html"))
+        return resp
+    login_resp = FileResponse(str(STATIC / "login.html"))
+    login_resp.headers["Cache-Control"] = "no-store, no-cache, must-revalidate"
+    return login_resp
 
 
 # protege /api/* menos login/auth-check/change-password
