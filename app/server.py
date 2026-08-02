@@ -385,21 +385,30 @@ def _bg_generate_reports(pids: list[int]):
 
 
 @app.post("/api/ensure-ai-reports")
-def ensure_ai_reports():
+def ensure_ai_reports(pid: int | None = None):
     """Verifica TODOS los pacientes; encola en 2do plano los informes IA
-    faltantes o vencidos (datos nuevos desde el último). No bloquea el sitio."""
+    faltantes o vencidos (datos nuevos desde el último). No bloquea el sitio.
+
+    Si se pasa ?pid=, regenera ESE paciente aunque no esté vencido
+    (por ejemplo, tras guardar datos vitales / notas médicas)."""
     pending: list[int] = []
     busy = any(j.get("status") in ("running", "queued")
                for j in _ai_jobs.values())
     if not busy:
         with _AI_BG_LOCK:
-            for p in db.persons():
-                pid = p["id"]
-                if _ai_jobs.get(pid, {}).get("status") in ("running", "queued"):
-                    continue
-                if _ai_report_stale(pid):
-                    _ai_jobs[pid] = {"status": "queued", "queued_at": _now_iso()}
+            if pid is not None:
+                if _ai_jobs.get(pid, {}).get("status") not in ("running", "queued"):
+                    _ai_jobs[pid] = {"status": "queued", "queued_at": _now_iso(),
+                                     "forced": True}
                     pending.append(pid)
+            else:
+                for p in db.persons():
+                    pid2 = p["id"]
+                    if _ai_jobs.get(pid2, {}).get("status") in ("running", "queued"):
+                        continue
+                    if _ai_report_stale(pid2):
+                        _ai_jobs[pid2] = {"status": "queued", "queued_at": _now_iso()}
+                        pending.append(pid2)
     if pending:
         threading.Thread(target=_bg_generate_reports, args=(pending,),
                          daemon=True).start()

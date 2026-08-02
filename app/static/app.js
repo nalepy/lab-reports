@@ -407,7 +407,9 @@ async function saveMetrics() {
   state.detail = await api(`/api/person/${pid}`);
   await loadPersons();
   renderPerson();
-  toast("Datos guardados", "green");
+  toast("Datos guardados — actualizando informe IA en segundo plano…", "green");
+  // el informe IA debe reflejar los vitales/notas: regenerar en 2do plano
+  ensureAIRepos(pid);
 }
 
 async function downloadFullPDF() {
@@ -1208,9 +1210,10 @@ async function doLogout() {
 
 /* ---------------- informes IA en segundo plano ---------------- */
 
-async function ensureAIRepos() {
+async function ensureAIRepos(pid) {
   try {
-    const res = await fetch("/api/ensure-ai-reports", {
+    const q = pid ? `?pid=${pid}` : "";
+    const res = await fetch("/api/ensure-ai-reports" + q, {
       method: "POST", credentials: "same-origin",
     });
     if (!res.ok) return;
