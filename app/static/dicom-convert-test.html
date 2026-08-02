@@ -1,0 +1,95 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>DICOM Converter — Test</title>
+<style>
+  body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+         max-width: 720px; margin: 2rem auto; padding: 0 1rem; color: #222; }
+  h1 { font-size: 1.3rem; margin-bottom: 0.25rem; }
+  .sub { color: #666; font-size: 0.85rem; margin-bottom: 1.5rem; }
+  label.file { display: inline-block; padding: 0.5rem 1.2rem; background: #2563eb;
+               color: #fff; border-radius: 6px; cursor: pointer; font-size: 0.9rem; }
+  label.file:hover { background: #1d4ed8; }
+  input[type=file] { display: none; }
+  #status { margin: 1rem 0; padding: 0.75rem; border-radius: 6px;
+            background: #f1f5f9; font-size: 0.85rem; white-space: pre-wrap; }
+  #output { margin-top: 1rem; }
+  #output img, #output video { max-width: 100%; border: 1px solid #ddd; border-radius: 4px; }
+  table { border-collapse: collapse; margin-top: 0.5rem; font-size: 0.85rem; }
+  td { padding: 2px 8px; border: 1px solid #e5e7eb; }
+  td:first-child { font-weight: 600; background: #f9fafb; }
+</style>
+</head>
+<body>
+
+<h1>DICOM Converter Test</h1>
+<p class="sub">Pick a <code>.dcm</code> file to convert client-side.</p>
+
+<label class="file">
+  Choose DICOM file
+  <input type="file" id="fileInput" accept=".dcm,.dicom,.ima">
+</label>
+
+<div id="status">Waiting for file…</div>
+<div id="output"></div>
+
+<script src="dicom-convert.js"></script>
+<script>
+  var input = document.getElementById('fileInput');
+  var status = document.getElementById('status');
+  var output = document.getElementById('output');
+
+  input.addEventListener('change', function () {
+    var file = input.files[0];
+    if (!file) return;
+
+    status.textContent = 'Parsing DICOM…';
+    output.innerHTML = '';
+
+    var start = performance.now();
+
+    DicomConverter.convert(file).then(function (result) {
+      var elapsed = ((performance.now() - start) / 1000).toFixed(2);
+
+      if (result.kind === 'unparsed') {
+        status.textContent = 'Could not parse this file as a supported DICOM. (' + elapsed + 's)';
+        return;
+      }
+
+      var url = URL.createObjectURL(result.blob);
+
+      var html = '';
+      if (result.kind === 'image') {
+        html += '<img src="' + url + '" alt="Converted image">';
+      } else {
+        html += '<video src="' + url + '" controls style="max-width:100%"></video>';
+      }
+
+      html += '<table>';
+      var m = result.meta;
+      var keys = ['frames','rows','cols','bitsAllocated','bitsStored','photometricInterpretation',
+                  'samplesPerPixel','rescaleSlope','rescaleIntercept',
+                  'windowCenter','windowWidth'];
+      if (m) {
+        keys.forEach(function (k) {
+          if (m[k] !== null && m[k] !== undefined) {
+            html += '<tr><td>' + k + '</td><td>' + m[k] + '</td></tr>';
+          }
+        });
+      }
+      html += '<tr><td>output</td><td>' + result.name + ' (' +
+              (result.blob.size / 1024).toFixed(1) + ' KB)</td></tr>';
+      html += '</table>';
+
+      output.innerHTML = html;
+
+      var sizeKB = (result.blob.size / 1024).toFixed(1);
+      status.textContent = 'Done — ' + result.kind + ', ' + sizeKB + ' KB (' + elapsed + 's)';
+    });
+  });
+</script>
+
+</body>
+</html>
