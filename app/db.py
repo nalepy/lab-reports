@@ -191,6 +191,7 @@ class DB:
             "height_cm": "REAL",
             "bp": "TEXT DEFAULT ''",
             "hr": "INTEGER",
+            "notes": "TEXT DEFAULT ''",
         }
         changed = False
         for name, ddl in adds.items():
@@ -203,7 +204,7 @@ class DB:
 
     def update_person_metrics(self, pid: int, birth_date: str = "",
                               weight_kg=None, height_cm=None,
-                              bp: str = "", hr=None):
+                              bp: str = "", hr=None, notes: str = ""):
         """Guarda datos vitales manuales; recalcula la edad si hay nacimiento."""
         age = None
         bd = (birth_date or "").strip()
@@ -216,9 +217,9 @@ class DB:
         self.conn.execute(
             """UPDATE persons
                SET birth_date=?, weight_kg=?, height_cm=?, bp=?, hr=?,
-                   age=COALESCE(?, age)
+                   notes=?, age=COALESCE(?, age)
                WHERE id=?""",
-            (bd, weight_kg, height_cm, bp, hr, age, pid))
+            (bd, weight_kg, height_cm, bp, hr, notes, age, pid))
         self.conn.commit()
 
     def newest_data_at(self, pid: int) -> str | None:

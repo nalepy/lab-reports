@@ -49,6 +49,12 @@ function esc(s) {
   return String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 }
 
+function fmtDMY(s) {
+  // "yyyy-mm-dd" (o iso completo) -> "dd-mm-yyyy"
+  const m = String(s || "").match(/^(\d{4})-(\d{2})-(\d{2})/);
+  return m ? `${m[3]}-${m[2]}-${m[1]}` : String(s || "");
+}
+
 /* ---------------- API ---------------- */
 
 async function api(url, opts) {
@@ -175,7 +181,7 @@ function renderPerson() {
       <h2>${esc(p.name)}</h2>
       <div class="meta">
         ${p.sex ? "Sexo: " + (p.sex === "M" ? "Masculino" : "Femenino") + " · " : ""}
-        ${p.age ? "Edad: " + p.age + " años" + (p.birth_date ? " (" + esc(p.birth_date) + ")" : "") + " · " : ""}
+        ${p.age ? "Edad: " + p.age + " años" + (p.birth_date ? " (" + esc(fmtDMY(p.birth_date)) + ")" : "") + " · " : ""}
         ${p.doc ? "Doc: " + esc(p.doc) + " · " : ""}
         ${p.n_reports} informe(s) · ${p.n_tests} análisis en total
       </div>
@@ -184,12 +190,14 @@ function renderPerson() {
   </div>
 
   <div class="metrics-bar">
-    <input id="mBirth" placeholder="Nacimiento (AAAA-MM-DD)" value="${esc(p.birth_date || "")}">
+    <div class="metrics-title">🩺 Datos vitales e información médica</div>
+    <input id="mBirth" type="date" title="Fecha de nacimiento" value="${esc(p.birth_date || "")}">
     <input id="mWeight" type="number" step="0.1" min="0" placeholder="Peso (kg)" value="${p.weight_kg ?? ""}">
     <input id="mHeight" type="number" step="0.1" min="0" placeholder="Talla (cm)" value="${p.height_cm ?? ""}">
     <input id="mBp" placeholder="Presión arterial (ej. 120/80)" value="${esc(p.bp || "")}">
     <input id="mHr" type="number" min="0" placeholder="Pulso (bpm)" value="${p.hr ?? ""}">
     <button class="btn" onclick="saveMetrics()">💾 Guardar</button>
+    <textarea id="mNotes" rows="2" placeholder="Otra información médica importante: alergias, enfermedades crónicas, antecedentes, condiciones no presentes en los informes…">${esc(p.notes || "")}</textarea>
   </div>
 
   <div class="tabs">
@@ -383,11 +391,12 @@ async function saveMetrics() {
     return el ? el.value : "";
   };
   const body = {
-    birth_date: val("mBirth").trim(),
+    birth_date: val("mBirth"),          // type=date -> yyyy-mm-dd
     weight_kg: val("mWeight") === "" ? null : parseFloat(val("mWeight")),
     height_cm: val("mHeight") === "" ? null : parseFloat(val("mHeight")),
     bp: val("mBp").trim(),
     hr: val("mHr") === "" ? null : parseInt(val("mHr"), 10),
+    notes: val("mNotes"),
   };
   const res = await api(`/api/person/${pid}/metrics`, {
     method: "PATCH",
@@ -423,15 +432,20 @@ async function downloadFullPDF() {
     : "<p>Sin medicamentos registrados.</p>";
   const hist = d.reports.map((r) =>
     `<li>${esc(r.lab)} · ${fmtDate(r.date)} · ${esc(r.source_file || "")}</li>`).join("");
-  const bpLine = (p.bp ? " · PA " + esc(p.bp) : "")
+  const bpLine = (p.birth_date ? " · Nac. " + esc(fmtDMY(p.birth_date)) : "")
+    + (p.bp ? " · PA " + esc(p.bp) : "")
     + (p.hr ? " · Pulso " + esc(p.hr) + " bpm" : "")
     + (p.weight_kg ? " · " + esc(p.weight_kg) + " kg" : "")
     + (p.height_cm ? " · " + esc(p.height_cm) + " cm" : "");
+  const notesSection = (p.notes && p.notes.trim())
+    ? `<h2>Información médica adicional</h2><p>${esc(p.notes)}</p>`
+    : "";
   $("#printRoot").innerHTML = `
     <div style="margin-bottom:16px">
       <h1>${esc(p.name)}</h1>
       <p class="pdf-meta">${p.sex ? "Sexo: " + (p.sex === "M" ? "Masculino" : "Femenino") + " · " : ""}Edad: ${p.age ? p.age + " años" : "—"}${bpLine}</p>
     </div>
+    ${notesSection}
     <h2>Resumen ejecutivo</h2>
     <p>${esc(a.summary.text)}</p>
     <h2>Informe médico con IA</h2>

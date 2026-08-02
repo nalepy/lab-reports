@@ -322,15 +322,16 @@ class MetricsIn(BaseModel):
     height_cm: float | None = None
     bp: str = ""
     hr: int | None = None
+    notes: str = ""
 
 
 @app.patch("/api/person/{pid}/metrics")
 def person_metrics(pid: int, m: MetricsIn):
-    """Guarda datos vitales manuales del paciente (fecha nac, peso, talla, PA, pulso)."""
+    """Guarda datos vitales manuales (fecha nac, peso, talla, PA, pulso, notas médicas)."""
     if not db.person(pid):
         return JSONResponse({"error": "Persona no encontrada"}, status_code=404)
     db.update_person_metrics(pid, m.birth_date, m.weight_kg, m.height_cm,
-                             m.bp, m.hr)
+                             m.bp, m.hr, m.notes)
     return {"ok": True, "person": db.person(pid)}
 
 

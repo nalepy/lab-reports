@@ -926,6 +926,18 @@ td .trend-flat { color: var(--muted); }
 }
 .metrics-bar input:focus { outline: 2px solid var(--serum, #2e7d32); border-color: transparent; }
 .metrics-bar .btn { flex: none; }
+.metrics-title {
+  flex: 0 0 100%; font-weight: 750; font-size: 12.5px;
+  letter-spacing: .04em; text-transform: uppercase;
+  color: var(--ink-2, #3a4350);
+}
+.metrics-bar textarea {
+  flex: 0 0 100%; width: 100%; resize: vertical; min-height: 42px;
+  padding: 8px 10px; border: 1px solid var(--line);
+  border-radius: 8px; font-size: 13px; font-family: inherit;
+  background: var(--surface); color: var(--ink, #161b22);
+}
+.metrics-bar textarea:focus { outline: 2px solid var(--serum, #2e7d32); border-color: transparent; }
 
 /* ============================================================
    PDF completo (impresión)

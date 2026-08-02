@@ -14,6 +14,7 @@ import json
 import os
 import urllib.request
 import urllib.error
+from datetime import datetime
 
 OPENROUTER_KEY = os.environ.get("OPENROUTER_API_KEY", "")
 # Si no hay variable de entorno, intentar leer data/.env
@@ -153,6 +154,34 @@ def _build_prompt(person, assessment, meds, reports) -> list[dict]:
     first_date = (reports[0]["date"] or "")[:10] if reports else "?"
     last_date = (reports[-1]["date"] or "")[:10] if reports else "?"
 
+    # ---- datos vitales + información médica manual (si están registrados) ----
+    vitals = []
+    bd = str(person.get("birth_date") or "")
+    if bd:
+        try:
+            bd = datetime.strptime(bd[:10], "%Y-%m-%d").strftime("%d-%m-%Y")
+        except ValueError:
+            pass
+        vitals.append(f"- Fecha de nacimiento: {bd}")
+    if person.get("age"):
+        vitals.append(f"- Edad: {person['age']} años")
+    if person.get("sex"):
+        vitals.append("- Sexo: " + ("M" if person["sex"] == "M" else "F"))
+    if person.get("weight_kg"):
+        vitals.append(f"- Peso: {person['weight_kg']} kg")
+    if person.get("height_cm"):
+        vitals.append(f"- Talla: {person['height_cm']} cm")
+    if person.get("weight_kg") and person.get("height_cm") and float(person["height_cm"]) > 0:
+        bmi = float(person["weight_kg"]) / (float(person["height_cm"]) / 100) ** 2
+        vitals.append(f"- IMC: {bmi:.1f} kg/m²")
+    if person.get("bp"):
+        vitals.append(f"- PRESIÓN ARTERIAL: {person['bp']} mmHg")
+    if person.get("hr"):
+        vitals.append(f"- Pulso: {person['hr']} bpm")
+    vitals_lines = "\n".join(vitals) or "- Sin datos vitales registrados"
+
+    notes_txt = str(person.get("notes") or "").strip()
+
     system_prompt = """Eres un médico analista senior y directo. Tu tarea es redactar
 un INFORME CLÍNICO PERSONALIZADO en español para un paciente, a partir de sus
 análisis de laboratorio y medicación.
@@ -175,14 +204,15 @@ REGLAS DE ORO:
    (con su motivo), 3) hábitos de vida. Nada de relleno.
 7. Formato: Markdown con secciones claras. Usa **negritas** para lo crítico.
    Idioma: español.
-8. Advertencia obligatoria al final: que esto es generado por IA y no
-   reemplaza la consulta médica.
-9. Si no hay hallazgos críticos ni de precaución, dilo claro y da consejos
+8. Si no hay hallazgos críticos ni de precaución, dilo claro y da consejos
    preventivos breves. No inventes enfermedades."""
     # noinspection PyUnresolvedReferences
     user_prompt = f"""PACIENTE: {person['name']}
-{('Sexo: ' + person['sex']) if person.get('sex') else ''}{(' · Edad: ' + str(person['age']) + ' años') if person.get('age') else ''}
 INFORMES ANALIZADOS: {n_reports} ({first_date} → {last_date})
+
+DATOS VITALES DEL PACIENTE:
+{vitals_lines}
+{('INFORMACIÓN MÉDICA ADICIONAL REFERIDA POR EL PACIENTE (alergias, enfermedades crónicas, antecedentes, otros):\n' + notes_txt) if notes_txt else ''}
 
 ESTADO ACTUAL DE BIOMARCADORES (solo última medición):
 {chr(10).join(markers)}
