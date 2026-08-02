@@ -399,6 +399,17 @@ class DB:
             new_count += 1
         self.conn.commit()
         self._upsert_file(path, sha, size, mtime)
+        # Vincular también como documento adjunto descargable (pestaña del
+        # paciente). La vía de subida web ya lo hace; la ingesta directa
+        # (escaneo de carpeta) no lo hacía y los PDFs quedaban solo como
+        # informes parseados, sin tarjeta de descarga.
+        for pid in person_ids:
+            exists = self.conn.execute(
+                "SELECT id FROM documents WHERE person_id=? AND stored_path=?",
+                (pid, stored_rel)).fetchone()
+            if not exists:
+                self.add_document(pid, fname, stored_rel, "pdf", size,
+                                  "Informe de laboratorio ingerido.")
         status = "ok" if new_count else "no_new"
         out = {"ok": True, "file": fname, "status": status,
                "new_reports": new_count,
