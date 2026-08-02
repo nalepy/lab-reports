@@ -183,16 +183,25 @@ function renderPerson() {
     <div class="card-header">📤 Subir estudios</div>
     <div class="card-body">
       <div class="upload-zone">
+        <div class="upload-drop" id="uploadDrop"
+             onclick="document.getElementById('uploadFiles').click()"
+             ondragover="ev.preventDefault(); this.classList.add('drag')"
+             ondragleave="this.classList.remove('drag')"
+             ondrop="onUploadDrop(event)">
+          <span class="upload-icon">📁</span>
+          <span><strong>Arrastre archivos o carpetas aquí</strong><br>
+            o haga clic para elegir archivos · PDF de laboratorio, imágenes, DICOM u otros</span>
+        </div>
+        <div class="upload-actions-row">
+          <button type="button" class="btn" onclick="document.getElementById('uploadFiles').click()">📄 Elegir archivos</button>
+          <button type="button" class="btn btn-ghost" onclick="document.getElementById('uploadFolder').click()">📁 Elegir carpeta</button>
+          <button type="button" class="btn btn-primary" onclick="uploadBatch()">⬆️ Subir y clasificar</button>
+        </div>
         <input type="file" id="uploadFiles" class="upload-input" multiple
                accept=".pdf,.jpg,.jpeg,.png,.gif,.webp,.bmp,.tif,.tiff,.dcm,.dicom,.zip,.doc,.docx,.txt,.csv"
                onchange="onUploadPicked()">
-        <label for="uploadFiles" class="upload-drop" id="uploadDropLabel">
-          <span class="upload-icon">📁</span>
-          <span><strong>Elija archivos o una carpeta</strong><br>PDF de laboratorio, imágenes, DICOM, u otros estudios</span>
-        </label>
-        <label class="up-mode"><input type="checkbox" id="uploadFolderMode" onchange="onFolderMode()">
-          <span>Modo carpeta (seleccionar una carpeta completa con subcarpetas)</span></label>
-        <button type="button" class="btn" onclick="uploadBatch()">⬆️ Subir y clasificar</button>
+        <input type="file" id="uploadFolder" class="upload-input" webkitdirectory directory multiple
+               onchange="onFolderPicked()">
         <div id="uploadFileList" class="upload-files"></div>
       </div>
       <div id="uploadResult"></div>
@@ -872,42 +881,50 @@ async function deleteDocument(docId) {
   }
 }
 
-/* ---------------- subir estudios (selector único) ---------------- */
+/* ---------------- subir estudios (un selector: archivos y/o carpetas) ---------------- */
 
-function onFolderMode() {
-  const input = $("#uploadFiles");
-  const folder = $("#uploadFolderMode").checked;
-  if (folder) {
-    input.setAttribute("webkitdirectory", "");
-    input.setAttribute("directory", "");
-  } else {
-    input.removeAttribute("webkitdirectory");
-    input.removeAttribute("directory");
-  }
-  input.value = "";
-  $("#uploadFileList").innerHTML = "";
-}
+let _pendingUpload = [];
 
-function onUploadPicked() {
-  const files = Array.from($("#uploadFiles").files || []);
-  const list = $("#uploadFileList");
-  if (!files.length) { list.innerHTML = ""; return; }
-  list.innerHTML = files.map((f) =>
+function _renderUploadList(listEl) {
+  if (!_pendingUpload.length) { listEl.innerHTML = ""; return; }
+  listEl.innerHTML = _pendingUpload.map((f) =>
     `<div class="up-file">${esc(f.webkitRelativePath || f.name)} <span>${(f.size / 1024).toFixed(0)} KB</span></div>`
   ).join("");
 }
 
-async function uploadBatch() {
+function onUploadPicked() {
   const input = $("#uploadFiles");
+  _pendingUpload = Array.from(input.files || []);
+  input.value = "";  // permite re-elegir el mismo archivo
+  _renderUploadList($("#uploadFileList"));
+}
+
+function onFolderPicked() {
+  const input = $("#uploadFolder");
+  _pendingUpload = Array.from(input.files || []);
+  input.value = "";
+  _renderUploadList($("#uploadFileList"));
+}
+
+function onUploadDrop(ev) {
+  ev.preventDefault();
+  const drop = $("#uploadDrop");
+  if (drop) drop.classList.remove("drag");
+  _pendingUpload = Array.from(ev.dataTransfer.files || []);
+  _renderUploadList($("#uploadFileList"));
+}
+
+async function uploadBatch() {
   const box = $("#uploadResult");
   const list = $("#uploadFileList");
-  const files = Array.from(input.files || []);
-  if (!files.length) { toast("Seleccione archivos o una carpeta", "yellow"); return; }
+  const files = _pendingUpload;
+  if (!files.length) { toast("Seleccione o arrastre archivos/carpetas", "yellow"); return; }
   const fd = new FormData();
   for (const f of files) {
-    // en modo carpeta conservamos la ruta relativa; el backend agrupa DICOM
+    // con webkitRelativePath conservamos la estructura; el backend agrupa DICOM
     fd.append("files", f, f.webkitRelativePath || f.name);
   }
+  _pendingUpload = [];
   list.innerHTML = "";
   box.innerHTML = `<p style="color:var(--muted)">⏳ Subiendo y clasificando ${files.length} archivo(s)…</p>`;
   try {
@@ -934,12 +951,16 @@ async function uploadBatch() {
            <div>Regenere el informe IA para que considere la información nueva.</div>
          </div>`
       : "";
-    box.innerHTML = `<div class="drug-warning sev-border-green"><div class="d-title">✅ Subida completa: ${s.uploaded || 0} archivo(s)</div></div>${rows}${note}`;
+    const summaryHtml = `<div class="drug-warning sev-border-green"><div class="d-title">✅ Subida completa: ${s.uploaded || 0} archivo(s)</div></div>${rows}${note}`;
+    box.innerHTML = summaryHtml;
     toast(s.new_reports ? `${s.new_reports} informe(s) nuevo(s) — actualice el informe IA` : "Subida completa", s.new_reports ? "yellow" : "green");
     // recargar persona (informes nuevos + documentos + aviso)
     state.detail = await api(`/api/person/${state.current}`);
     await loadPersons();
     renderPerson();
+    // el re-render recrea la tarjeta: reintroducir el resumen de la subida
+    const fresh = $("#uploadResult");
+    if (fresh) fresh.innerHTML = summaryHtml;
     // si el PDF creó un paciente nuevo (nombre no existía), abrir su pestaña
     if (movedCreated) {
       toast("Se creó un paciente nuevo por el nombre del informe", "yellow");

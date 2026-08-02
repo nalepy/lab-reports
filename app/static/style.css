@@ -825,14 +825,20 @@ td .trend-flat { color: var(--muted); }
   transition: background .15s, border-color .15s;
 }
 .upload-drop:hover { background: #d6eef0; border-color: var(--serum-brt); }
+.upload-drop.drag { background: var(--serum); border-color: var(--serum-deep); color: #fff; }
+.upload-drop.drag strong, .upload-drop.drag span { color: #fff; }
 .upload-icon { font-size: 30px; }
 .upload-drop strong { font-size: 14.5px; color: var(--ink); }
 .upload-drop span { color: var(--muted); font-size: 12.5px; }
-.up-mode {
-  display: flex; align-items: center; gap: 8px; font-size: 12.5px;
-  color: var(--ink-2); cursor: pointer; padding: 2px 0;
+.upload-actions-row { display: flex; gap: 9px; flex-wrap: wrap; }
+.upload-actions-row .btn { padding: 9px 16px; }
+.upload-actions-row .btn-ghost {
+  background: var(--surface); color: var(--ink-2);
+  border: 1px solid var(--line); box-shadow: none;
 }
-.up-mode input { accent-color: var(--serum); width: 15px; height: 15px; }
+.upload-actions-row .btn-ghost:hover { background: var(--surface-2); border-color: #cfd6dd; }
+.upload-actions-row .btn-primary { background: var(--serum-deep); }
+.upload-actions-row .btn-primary:hover { background: var(--serum); }
 .upload-files { display: grid; gap: 4px; max-height: 160px; overflow-y: auto; }
 .up-file {
   font-size: 12px; color: var(--ink-2); background: var(--surface-2);
