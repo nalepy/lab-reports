@@ -230,9 +230,11 @@ _LAB_SUFFIX_RE = re.compile(
     r"(?:^|\s)(S\.?R\.?L\.?|LTDA\.?|EIRL|S\.?A\.?C\.?I\.?|"
     r"S\.?A\.?S|C\.?I\.?F\.?A\.?)\s*$",
     re.I)
-# nombres de laboratorio ya conocidos (pueden aparecer solos en la cabecera)
-_KNOWN_LABS = {"CURIE", "MEDVITAL", "SANACOOP", "SANISIDRO", "VERDEJO",
-               "YPACARAI", "BRUNELLI"}
+# nombres de laboratorio ya conocidos (pueden aparecer solos en la cabecera).
+# NOTA: no incluir DOCTORES (p. ej. VERDEJO es el médico que firma), ni
+# apellidos que un paciente real podría llevar.
+_KNOWN_LABS = {"CURIE", "MEDVITAL", "SANACOOP", "SANISIDRO", "YPACARAI",
+               "BRUNELLI"}
 
 
 def _is_lab_like(name: str) -> bool:
