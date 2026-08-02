@@ -5,31 +5,70 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Panel de Laboratorio Clínico — Iniciar sesión</title>
 <style>
-:root { --blue: #1565c0; --bg: #f4f6f8; --card: #ffffff; --border: #e0e4e8;
-        --text: #1a1a1a; --muted: #6b7280; }
+:root {
+  --ink: #10151c; --muted: #6b7684; --faint: #9aa4ad;
+  --paper: #eaeef2; --surface: #ffffff; --line: #dbe1e7;
+  --serum: #0a7d8c; --serum-deep: #075e69; --serum-brt: #14b8c4;
+  --serum-wash: #e2f4f6; --red: #c5362b;
+  --font-mono: ui-monospace, "Cascadia Code", "SF Mono", Menlo, Consolas, monospace;
+}
 * { box-sizing: border-box; margin: 0; padding: 0; }
-body { font-family: "Segoe UI", system-ui, sans-serif; background: var(--bg);
-       display: flex; align-items: center; justify-content: center;
-       min-height: 100vh; }
-.card { background: var(--card); border-radius: 12px; border: 1px solid var(--border);
-        padding: 40px 32px; width: 100%; max-width: 400px; box-shadow: 0 2px 12px
-        rgba(0,0,0,0.08); text-align: center; }
-h1 { font-size: 22px; color: var(--blue); margin-bottom: 8px; }
-p { color: var(--muted); font-size: 14px; margin-bottom: 24px; }
-input { width: 100%; padding: 12px; border: 1px solid var(--border);
-        border-radius: 8px; font-size: 16px; margin-bottom: 16px; }
-button { width: 100%; padding: 12px; background: var(--blue); color: #fff;
-         border: none; border-radius: 8px; font-size: 16px; font-weight: 600;
-         cursor: pointer; }
-button:hover { background: #0d47a1; }
+body {
+  font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  background:
+    radial-gradient(900px 500px at 100% -10%, rgba(20,184,196,.10), transparent 60%),
+    var(--paper);
+  color: var(--ink);
+  display: flex; align-items: center; justify-content: center;
+  min-height: 100vh; padding: 20px;
+  -webkit-font-smoothing: antialiased;
+}
+.card {
+  background: var(--surface); border-radius: 16px; border: 1px solid var(--line);
+  padding: 40px 34px; width: 100%; max-width: 400px;
+  box-shadow: 0 1px 2px rgba(16,21,28,.05), 0 30px 70px -30px rgba(16,21,28,.4);
+  text-align: center; position: relative; overflow: hidden;
+}
+.card::before {
+  content: ""; position: absolute; top: 0; left: 0; right: 0; height: 4px;
+  background: linear-gradient(90deg, var(--serum-brt), var(--serum-deep));
+}
+.mark {
+  width: 52px; height: 52px; border-radius: 14px; margin: 0 auto 18px;
+  background: linear-gradient(145deg, var(--serum-brt), var(--serum-deep));
+  display: grid; place-items: center; font-size: 26px;
+  box-shadow: 0 10px 24px -10px rgba(10,125,140,.7);
+}
+.eyebrow {
+  font-size: .66rem; font-weight: 700; letter-spacing: .18em; text-transform: uppercase;
+  color: var(--faint); margin-bottom: 6px;
+}
+h1 { font-size: 21px; font-weight: 800; letter-spacing: -.01em; color: var(--ink); margin-bottom: 8px; }
+p { color: var(--muted); font-size: 14px; margin-bottom: 26px; }
+input {
+  width: 100%; padding: 13px 14px; border: 1px solid var(--line); border-radius: 10px;
+  font-size: 16px; margin-bottom: 16px; background: var(--surface); color: var(--ink);
+  transition: border-color .15s, box-shadow .15s; font-family: var(--font-mono);
+}
+input::placeholder { font-family: system-ui, sans-serif; color: var(--faint); }
+input:focus { outline: none; border-color: var(--serum-brt); box-shadow: 0 0 0 3px rgba(20,184,196,.30); }
+button {
+  width: 100%; padding: 13px; background: var(--serum); color: #fff; border: none;
+  border-radius: 10px; font-size: 15px; font-weight: 700; cursor: pointer;
+  transition: background .15s, transform .05s;
+}
+button:hover { background: var(--serum-deep); }
+button:active { transform: translateY(1px); }
 button:disabled { opacity: 0.6; cursor: wait; }
-.error { color: #d32f2f; font-size: 13px; margin-top: 8px; min-height: 20px; }
+.error { color: var(--red); font-size: 13px; margin-top: 10px; min-height: 20px; font-weight: 600; }
 </style>
 </head>
 <body>
 <div class="card">
-  <h1>🧪 Panel de Laboratorio Clínico</h1>
-  <p>Ingrese la contraseña para acceder a los informes.</p>
+  <div class="mark">🧪</div>
+  <div class="eyebrow">Panel de Laboratorio Clínico</div>
+  <h1>Acceso privado</h1>
+  <p>Ingrese la contraseña para ver los informes.</p>
   <form onsubmit="return doLogin(event)">
     <input type="password" id="password" placeholder="Contraseña" autofocus required>
     <button type="submit" id="btnLogin">Ingresar</button>

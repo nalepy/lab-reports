@@ -20,11 +20,11 @@
 
 <header>
   <div class="header-row">
-    <h1>🧪 Panel de Laboratorio Clínico</h1>
+    <h1><span class="brand-mark">🧪</span> Panel de Laboratorio Clínico</h1>
     <div class="header-actions">
       <span id="folderInfo" class="folder-info"></span>
       <button id="btnRescan" onclick="rescanFolder()">🔄 Buscar archivos nuevos</button>
-      <button onclick="toggleSettings()" style="background:var(--gray);color:#fff;border:none;border-radius:6px;padding:8px 12px;font-weight:600;cursor:pointer">⚙️</button>
+      <button class="icon-btn" onclick="toggleSettings()" title="Configuración" aria-label="Configuración">⚙️</button>
       <span id="scanResult" class="scan-result"></span>
     </div>
   </div>

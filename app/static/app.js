@@ -631,7 +631,7 @@ function renderTables(d) {
     return `
     <tr>
       <td>${esc(m.label)} ${lastDate ? `<span style="color:var(--muted);font-size:11px">(${lastDate})</span>` : ""}${ageIcon}</td>
-      <td class="num ${m.status === "alto" ? "val-abnormal-H" : m.status === "bajo" ? "val-abnormal-L" : ""}">${fmtNum(m.value, m.unit)}</td>
+      <td class="num ${m.status === "alto" ? "val-abnormal-H" : m.status === "bajo" ? "val-abnormal-L" : ""}">${fmtNum(m.value, m.unit)}${rangeMeter(m)}</td>
       <td class="num">${m.ref_low != null ? fmtNum(m.ref_low, "") : ""}${m.ref_low != null && m.ref_high != null ? " – " : ""}${m.ref_high != null ? fmtNum(m.ref_high, "") : ""}</td>
       <td>${m.status === "normal" ? '<span class="flag-N">Normal</span>' : m.status === "alto" ? '<span class="flag-H">Alto</span>' : m.status === "bajo" ? '<span class="flag-L">Bajo</span>' : '<span style="color:#999">—</span>'}</td>
       <td>${trendIcon(m)}</td>
@@ -700,6 +700,23 @@ function renderTables(d) {
         </table>
       </div>
     </div>
+  </div>`;
+}
+
+/* medidor de rango de referencia — elemento firma visual.
+   Coloca el valor del paciente sobre la banda normal (mapeada al centro
+   18%–82% del riel, coincidiendo con las zonas de color del CSS). */
+function rangeMeter(m) {
+  const lo = m.ref_low, hi = m.ref_high, v = m.value;
+  if (lo == null || hi == null || v == null || hi <= lo) return "";
+  // 18% = ref_low, 82% = ref_high → 64% de ancho para la banda normal
+  let pct = 18 + ((v - lo) / (hi - lo)) * 64;
+  if (pct < 2) pct = 2;
+  if (pct > 98) pct = 98;
+  const tick = m.status === "alto" ? "tick-H" : m.status === "bajo" ? "tick-L" : "tick-N";
+  return `<div class="range-meter" title="Valor sobre el rango de referencia">
+    <div class="range-track"><span class="range-zone-normal"></span><span class="range-tick ${tick}" style="left:${pct.toFixed(1)}%"></span></div>
+    <div class="meter-caption"><span>${fmtNum(lo, "")}</span><span>${fmtNum(hi, "")}</span></div>
   </div>`;
 }
 

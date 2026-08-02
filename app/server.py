@@ -496,7 +496,13 @@ def document_file_in_folder(doc_id: int, relpath: str):
         return JSONResponse({"error": "Documento no encontrado"}, status_code=404)
     root = os.path.realpath(db.resolve_path(doc["stored_path"]))
     target = os.path.realpath(os.path.join(root, relpath))
-    if not target.startswith(root) or not os.path.isfile(target):
+    # contención robusta: target debe estar dentro de root (evita traversal por
+    # hermanos como "<root>_evil" que 'startswith' aceptaría por error).
+    try:
+        contained = target == root or os.path.commonpath([target, root]) == root
+    except ValueError:  # unidades distintas (Windows) → fuera de root
+        contained = False
+    if not contained or not os.path.isfile(target):
         return JSONResponse({"error": "Archivo no encontrado"}, status_code=404)
     ext = os.path.splitext(target)[1].lower()
     media = {
