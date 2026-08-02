@@ -719,13 +719,14 @@ function renderTables(d) {
   de cada valor anormal se muestran en “Hallazgos anormales”.</div>`;
 }
 
-/* texto del rango deseado de referencia para tooltips */
+/* texto del rango deseado de referencia para tooltips (siempre escapado:
+   va en un atributo title y ref_text proviene de PDFs de laboratorio). */
 function refTooltip(ref_text, low, high, unit) {
   const t = (ref_text || "").trim();
-  if (t && t !== "-") return t;
-  if (low != null && high != null) return `Rango deseado: ${fmtNum(low, "")} – ${fmtNum(high, "")} ${esc(unit || "")}`.trim();
-  if (high != null) return `Rango deseado: inferior a ${fmtNum(high, "")} ${esc(unit || "")}`.trim();
-  if (low != null) return `Rango deseado: superior a ${fmtNum(low, "")} ${esc(unit || "")}`.trim();
+  if (t && t !== "-") return esc(t);
+  if (low != null && high != null) return esc(`Rango deseado: ${fmtNum(low, "")} – ${fmtNum(high, "")} ${unit || ""}`.trim());
+  if (high != null) return esc(`Rango deseado: inferior a ${fmtNum(high, "")} ${unit || ""}`.trim());
+  if (low != null) return esc(`Rango deseado: superior a ${fmtNum(low, "")} ${unit || ""}`.trim());
   return "";
 }
 
