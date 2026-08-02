@@ -993,7 +993,7 @@ async function uploadBatch() {
     const s = data.summary || {};
     const note = (s.uploaded > 0)
       ? `<div class="drug-warning sev-border-yellow" style="margin-top:10px">
-           <div class="d-title">🆕 ${s.uploaded} archivo(s) nuevo(s) subido(s)${s.new_reports ? ` · ${s.new_reports} informe(s) de laboratorio` : ""}</div>
+           <div class="d-title">🆕 ${esc(s.uploaded)} archivo(s) nuevo(s) subido(s)${s.new_reports ? ` · ${esc(s.new_reports)} informe(s) de laboratorio` : ""}</div>
            <div>⚠️ Considere <strong>regenerar el informe IA</strong> para que incluya la información nueva.</div>
          </div>`
       : "";
