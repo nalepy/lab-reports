@@ -178,9 +178,12 @@ def add_person(p: PersonIn):
 
 
 def _merge_imaging_series(assessment: dict, analyses: list) -> None:
-    """Agrega a los gráficos series de valores numéricos repetidos entre
-    análisis de estudios de imagen (mismo sistema y unidad en ≥2 estudios)."""
-    groups: dict[tuple, list[dict]] = {}
+    """Inyecta hallazgos numéricos de análisis de imagen en la tabla mensual
+    y los gráficos. Crea marcadores sintéticos con key `_ana_<n>` para que
+    `renderTables` los muestre como filas."""
+    series = assessment.setdefault("series", {})
+    markers = assessment.setdefault("markers", [])
+    n = 0
     for a in analyses:
         if a.get("status") != "done":
             continue
@@ -190,6 +193,7 @@ def _merge_imaging_series(assessment: dict, analyses: list) -> None:
             findings = []
         if not isinstance(findings, list):
             continue
+        adate = (a.get("created_at") or "")[:10]
         for f in findings:
             v = f.get("value")
             if v is None or isinstance(v, bool):
@@ -198,21 +202,23 @@ def _merge_imaging_series(assessment: dict, analyses: list) -> None:
                 fv = float(v)
             except (TypeError, ValueError):
                 continue
-            key = (str(f.get("system", "Estudio")).strip(),
-                   str(f.get("unit", "") or "").strip())
-            groups.setdefault(key, []).append({
-                "date": (a.get("created_at") or "")[:10],
+            system = str(f.get("system", "Estudio")).strip() or "Estudio"
+            unit = str(f.get("unit") or "").strip()
+            skey = f"_ana_{n}"
+            label = f"{system} — {str(f.get('text', '')).split('.')[0][:60]}"
+            marker = {
+                "key": skey,
+                "label": label,
                 "value": fv,
-                "unit": key[1],
-            })
-    series = assessment.setdefault("series", {})
-    n = 0
-    for (system, unit), pts in groups.items():
-        if len(pts) < 2:
-            continue
-        pts_sorted = sorted(pts, key=lambda x: x["date"])
-        series[f"img_{n}"] = [{"name": system, **p} for p in pts_sorted]
-        n += 1
+                "unit": unit,
+                "status": "normal",
+                "last_date": adate,
+                "n_measurements": 1,
+                "trend": "",
+            }
+            markers.append(marker)
+            series[skey] = [{"name": label, "date": adate, "value": fv, "unit": unit}]
+            n += 1
 
 
 @app.get("/api/person/{pid}")
