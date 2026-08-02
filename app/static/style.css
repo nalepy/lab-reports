@@ -983,3 +983,15 @@ td .trend-flat { color: var(--muted); }
 .del-options select:focus, .del-options input:focus {
   outline: 2px solid var(--red, #d32f2f); border-color: transparent;
 }
+
+/* ============================================================
+   RANGO DE REFERENCIA ESTÁNDAR — junto al nombre del análisis
+   ============================================================ */
+.std-range {
+  display: block;
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--muted);
+  letter-spacing: 0;
+}
+.std-range::first-letter { text-transform: lowercase; }

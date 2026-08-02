@@ -823,9 +823,11 @@ function renderTables(d) {
   const t2head = monthOrder.map((mk) => `<th>${monthLabel(mk)}</th>`).join("");
   const t2rows = rows.map((m) => {
     const nameTip = refTooltip(m.ref_text, m.ref_low, m.ref_high, m.unit);
+    const stdRange = m.std_range
+      ? ` <span class="std-range">(${esc(m.std_range)})</span>` : "";
     const nameCell = nameTip
-      ? `<td title="${nameTip}" style="cursor:help">${esc(m.label)}</td>`
-      : `<td>${esc(m.label)}</td>`;
+      ? `<td title="${nameTip}" style="cursor:help">${esc(m.label)}${stdRange}</td>`
+      : `<td>${esc(m.label)}${stdRange}</td>`;
     const cells = monthOrder.map((mk) => {
       const cell = byMonth[mk] && byMonth[mk][m.key];
       if (!cell) return `<td class="num"></td>`;  // no se realizó ese mes

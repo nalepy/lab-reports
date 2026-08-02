@@ -467,6 +467,86 @@ def _norm_qual(q):
     return s.strip()
 
 
+# unidades estándar por biomarcador (las ampliamente usadas; cada laboratorio
+# puede informar las suyas, esto es solo para mostrar el rango de referencia
+# deseado junto al nombre del análisis).
+STD_UNITS = {
+    "rbc": "/µL", "hemoglobin": "g/dL", "hematocrit": "%",
+    "mcv": "fL", "mch": "pg", "mchc": "g/dL", "rdw": "%",
+    "wbc": "/µL", "neut_pct": "%", "lymph_pct": "%", "mono_pct": "%",
+    "eos_pct": "%", "baso_pct": "%",
+    "neut_abs": "/µL", "lymph_abs": "/µL", "mono_abs": "/µL",
+    "eos_abs": "/µL", "baso_abs": "/µL",
+    "platelets": "/µL", "mpv": "fL", "esr": "mm/h",
+    "glucose": "mg/dL", "hba1c": "%", "urea": "mg/dL",
+    "creatinine": "mg/dL", "uric_acid": "mg/dL",
+    "cholesterol": "mg/dL", "hdl": "mg/dL", "ldl": "mg/dL",
+    "vldl": "mg/dL", "trig": "mg/dL", "lipids_total": "mg/dL",
+    "phospholipids": "mg/dL",
+    "got": "U/L", "gpt": "U/L", "alp": "U/L", "ldh": "U/L",
+    "bili_t": "mg/dL", "bili_d": "mg/dL", "bili_i": "mg/dL",
+    "total_protein": "g/dL", "albumin": "g/dL",
+    "calcium": "mg/dL", "phosphorus": "mg/dL", "magnesium": "mg/dL",
+    "sodium": "mEq/L", "potassium": "mEq/L", "chloride": "mEq/L",
+    "amylase": "U/L", "ck": "U/L", "ck_mb": "ng/mL", "crp": "mg/L",
+    "psa_total": "ng/mL", "psa_free": "ng/mL", "troponin": "ng/mL",
+    "tsh": "µUI/mL", "t4_total": "µg/dL", "t4_free": "ng/dL",
+    "t3_total": "ng/dL", "t3_free": "pg/mL",
+    "vit_d": "ng/mL", "ferritin": "ng/mL",
+}
+
+# frases curadas para los análisis más comunes (formato humano)
+STD_PHRASES = {
+    "cholesterol": "deseable inferior a 200 mg/dL",
+    "ldl": "deseable inferior a 100 mg/dL",
+    "hdl": "superior a 40 mg/dL (hombre) / 50 mg/dL (mujer)",
+    "trig": "inferior a 150 mg/dL",
+    "hba1c": "4,0 – 5,6 %",
+    "glucose": "70 – 100 mg/dL en ayunas",
+    "rbc": "4.500.000 – 5.850.000 /µL (hombre) · 4.080.000 – 5.200.000 /µL (mujer)",
+    "hemoglobin": "13,5 – 17,5 g/dL (hombre) · 12,0 – 16,0 g/dL (mujer)",
+    "hematocrit": "40 – 52 % (hombre) · 37 – 47 % (mujer)",
+    "wbc": "4.000 – 10.000 /µL",
+    "platelets": "150.000 – 450.000 /µL",
+}
+
+
+def _fmt_std_num(v) -> str:
+    if v is None:
+        return ""
+    if v >= 1000:
+        if float(v).is_integer():
+            return f"{int(v):,}".replace(",", ".")
+        return f"{v:,.1f}".replace(",", ".").replace(".", ",", 1)
+    if float(v).is_integer():
+        return str(int(v))
+    return str(v).replace(".", ",")
+
+
+def std_range_text(key: str, sex: str = "") -> str:
+    """Texto del rango de referencia estándar (ampliamente adoptado)."""
+    if key in STD_PHRASES:
+        return STD_PHRASES[key]
+    ranges = DEFAULT_RANGES.get(key)
+    if not ranges:
+        return ""
+    unit = STD_UNITS.get(key, "")
+    parts = []
+    for r in ranges:
+        lo, hi = r[0], r[1]
+        g = r[2] if len(r) > 2 else None
+        s = f"inferior a {_fmt_std_num(hi)}" if lo == 0 \
+            else f"entre {_fmt_std_num(lo)} y {_fmt_std_num(hi)}"
+        if unit:
+            s += f" {unit}"
+        if g == "M":
+            s += " (hombre)"
+        elif g == "F":
+            s += " (mujer)"
+        parts.append(s)
+    return " · ".join(parts)
+
+
 def build_assessment(person: dict, tests: list[dict], meds: list[dict]) -> dict:
     """Construye la evaluación completa de una persona."""
     sex = person.get("sex") or ""
@@ -552,6 +632,7 @@ def build_assessment(person: dict, tests: list[dict], meds: list[dict]) -> dict:
             "ref_low": low,
             "ref_high": high,
             "ref_text": last.get("ref_text", ""),
+            "std_range": std_range_text(key, sex),
             "trend": trend,
             "n_measurements": len(pts),
             "last_date": last.get("date"),
