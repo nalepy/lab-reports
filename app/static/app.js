@@ -217,25 +217,6 @@ function renderPerson() {
     </div>
   </div>
 
-  <div class="card">
-    <div class="card-header">📊 Tablas comparativas (evolución por mes/año)</div>
-    <div class="card-body">
-      ${renderTables(d)}
-    </div>
-  </div>
-
-  <div class="card">
-    <div class="card-header">📈 Evolución temporal (gráficos)</div>
-    <div class="card-body">
-      ${renderCharts(a)}
-    </div>
-  </div>
-
-  <div class="card summary-card tone-${esc(a.summary.tone)}">
-    <div class="card-header">📋 Resumen ejecutivo</div>
-    <div class="card-body"><p>${esc(a.summary.text)}</p></div>
-  </div>
-
   <div class="card" id="medsCard">
     <div class="card-header">💊 Medicamentos del paciente</div>
     <div class="card-body">
@@ -267,6 +248,28 @@ function renderPerson() {
       <div id="aiResult" style="margin-top:12px"></div>
     </div>
   </div>
+
+  <div class="card summary-card tone-${esc(a.summary.tone)}">
+    <div class="card-header">📋 Resumen ejecutivo</div>
+    <div class="card-body"><p>${esc(a.summary.text)}</p></div>
+  </div>
+
+  <div class="card">
+    <div class="card-header">📊 Tablas comparativas (evolución por mes/año)</div>
+    <div class="card-body">
+      ${renderTables(d)}
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-header">📈 Evolución temporal (gráficos)</div>
+    <div class="card-body">
+      ${renderCharts(a)}
+    </div>
+  </div>
+
+  <div class="card summary-card tone-${esc(a.summary.tone)}" style="display:none"></div>
+
 
   <div class="card">
     <div class="card-header">🔴 Hallazgos anormales (por severidad)</div>
