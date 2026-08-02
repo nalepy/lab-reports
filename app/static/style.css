@@ -732,6 +732,27 @@ td .trend-flat { color: var(--muted); }
 }
 .doc-actions button:hover { color: var(--red); }
 
+/* ---------- análisis IA de estudios ---------- */
+.ana-box {
+  border-top: 1px solid var(--line); padding: 8px 12px 10px;
+  background: var(--surface-2); font-size: 11px;
+}
+.ana-head {
+  font-weight: 700; color: var(--ink); margin-bottom: 4px; font-size: 11px;
+}
+.ana-list { margin: 0; padding-left: 14px; color: var(--ink); }
+.ana-list li { margin-bottom: 2px; }
+.ana-f-red { color: #b3261e; }
+.ana-f-yellow { color: #8a6d00; }
+.ana-f-green { color: #2e7d32; }
+.ana-err { color: #b3261e; }
+.ana-wait { color: var(--muted); }
+
+/* botones pequeños dentro de card-header */
+.card-header .card-actions { margin-left: auto; display: flex; gap: 8px; }
+.btn-sm { padding: 5px 10px; font-size: 12px; }
+
+
 /* ============================================================
    HISTORIAL DE INFORMES
    ============================================================ */

@@ -9,8 +9,9 @@ El backend:
 """
 import os
 import time
-import threading
 import glob
+import tempfile
+import threading
 import asyncio
 from datetime import datetime
 from pathlib import Path
@@ -20,6 +21,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse, JSONResponse, Response
 from pydantic import BaseModel
+import json
 import re
 
 from .db import DB
@@ -29,6 +31,7 @@ from . import drugs as drugs_mod
 from . import catalog
 from . import ai_engine
 from . import auth
+from . import imaging
 from .parser import parse_pdf
 
 HERE = Path(__file__).resolve().parent
@@ -174,6 +177,44 @@ def add_person(p: PersonIn):
     return {"ok": True, "id": pid}
 
 
+def _merge_imaging_series(assessment: dict, analyses: list) -> None:
+    """Agrega a los gráficos series de valores numéricos repetidos entre
+    análisis de estudios de imagen (mismo sistema y unidad en ≥2 estudios)."""
+    groups: dict[tuple, list[dict]] = {}
+    for a in analyses:
+        if a.get("status") != "done":
+            continue
+        try:
+            findings = json.loads(a.get("findings_json") or "[]")
+        except (json.JSONDecodeError, TypeError):
+            findings = []
+        if not isinstance(findings, list):
+            continue
+        for f in findings:
+            v = f.get("value")
+            if v is None or isinstance(v, bool):
+                continue
+            try:
+                fv = float(v)
+            except (TypeError, ValueError):
+                continue
+            key = (str(f.get("system", "Estudio")).strip(),
+                   str(f.get("unit", "") or "").strip())
+            groups.setdefault(key, []).append({
+                "date": (a.get("created_at") or "")[:10],
+                "value": fv,
+                "unit": key[1],
+            })
+    series = assessment.setdefault("series", {})
+    n = 0
+    for (system, unit), pts in groups.items():
+        if len(pts) < 2:
+            continue
+        pts_sorted = sorted(pts, key=lambda x: x["date"])
+        series[f"img_{n}"] = [{"name": system, **p} for p in pts_sorted]
+        n += 1
+
+
 @app.get("/api/person/{pid}")
 def person_detail(pid: int):
     p = db.person(pid)
@@ -232,6 +273,8 @@ def person_detail(pid: int):
         up = (d.get("uploaded_at") or "").replace("T", " ").split(".")[0]
         if last_rep_n and up > last_rep_n:
             new_since.append(d)
+    # series de estudios de imagen: valores numéricos repetidos entre análisis
+    _merge_imaging_series(assessment, db.analyses_for_person(pid))
     return {
         "person": p,
         "reports": reports,
@@ -706,6 +749,84 @@ async def upload_batch(pid: int, files: list[UploadFile] = File(...)):
             "new_reports": total_new_reports,
         },
     }
+
+
+@app.post("/api/person/{pid}/process-studies")
+def process_studies(pid: int):
+    """Analiza con IA (visión) los estudios subidos aún sin análisis.
+
+    Recorre los documentos del paciente que no tienen un análisis completo,
+    convierte cada uno (PDF escaneado, imagen, serie DICOM) a PNG y pide a un
+    modelo de visión barato de OpenRouter que extraiga los hallazgos. Guarda
+    el resultado en `analyses` para mostrarlo en el informe IA, la grilla de
+    estudios y los gráficos.
+    """
+    p = db.person(pid)
+    if not p:
+        return JSONResponse({"error": "Persona no encontrada"}, status_code=404)
+    docs = db.documents_for(pid)
+    parsed_paths = {r.get("stored_path") for r in db.reports_for(pid)}
+    hint = f"{p.get('name') or 'Paciente'} — estudio clínico"
+    model_id = ai_engine.VISION_MODELS[ai_engine.VISION_MODEL]["id"]
+    results = []
+    analyzed = 0
+    errors = 0
+    skipped = 0
+    with tempfile.TemporaryDirectory() as tmp:
+        for d in docs:
+            if d.get("analysis_status") == "done":
+                continue
+            # PDFs ya ingeridos como informe: ya están en tablas/gráficos
+            if d.get("kind") == "pdf" and d.get("stored_path") in parsed_paths:
+                continue
+            path = db.resolve_path(d.get("stored_path") or "")
+            if not path or not os.path.exists(path):
+                db.save_analysis(d["id"], "error", model=model_id, kind=d["kind"],
+                                 error="Archivo no encontrado en disco")
+                results.append({"ok": False, "document_id": d["id"],
+                                "file": d.get("orig_filename"),
+                                "status": "error", "message": "Archivo no encontrado"})
+                errors += 1
+                continue
+            pngs = imaging.study_to_pngs(path, tmp, max_images=3)
+            if not pngs:
+                db.save_analysis(d["id"], "error", model=model_id, kind=d["kind"],
+                                 error="No se pudo generar una imagen del estudio")
+                results.append({"ok": False, "document_id": d["id"],
+                                "file": d.get("orig_filename"),
+                                "status": "error",
+                                "message": "No se pudo generar una imagen"})
+                errors += 1
+                continue
+            try:
+                res = ai_engine.analyze_image(
+                    pngs, f"{hint} — {d.get('orig_filename')}")
+                findings = res["findings"]
+                db.save_analysis(d["id"], "done", model=model_id,
+                                 text=res["text"], findings=findings,
+                                 kind=d["kind"])
+                analyzed += 1
+                results.append({"ok": True, "document_id": d["id"],
+                                "file": d.get("orig_filename"),
+                                "status": "analyzed",
+                                "findings": len(findings)})
+            except ai_engine.AIError as e:
+                db.save_analysis(d["id"], "error", model=model_id, kind=d["kind"],
+                                 error=str(e))
+                results.append({"ok": False, "document_id": d["id"],
+                                "file": d.get("orig_filename"),
+                                "status": "error", "message": str(e)})
+                errors += 1
+            except Exception as e:  # noqa: BLE001
+                db.save_analysis(d["id"], "error", model=model_id, kind=d["kind"],
+                                 error=str(e))
+                results.append({"ok": False, "document_id": d["id"],
+                                "file": d.get("orig_filename"),
+                                "status": "error", "message": str(e)})
+                errors += 1
+    return {"ok": True, "model": model_id, "results": results,
+            "summary": {"total": len(results), "analyzed": analyzed,
+                        "errors": errors, "skipped": skipped}}
 
 
 @app.post("/api/person/{pid}/pending")

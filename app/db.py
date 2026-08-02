@@ -232,6 +232,19 @@ CREATE INDEX IF NOT EXISTS idx_reports_person ON reports(person_id);
 CREATE INDEX IF NOT EXISTS idx_reports_date ON reports(date);
 CREATE INDEX IF NOT EXISTS idx_tests_report ON tests(report_id);
 CREATE INDEX IF NOT EXISTS idx_tests_canonical ON tests(canonical);
+
+CREATE TABLE IF NOT EXISTS analyses (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    document_id INTEGER NOT NULL UNIQUE,
+    kind TEXT DEFAULT 'image',
+    status TEXT DEFAULT 'pending',
+    model TEXT DEFAULT '',
+    text TEXT DEFAULT '',
+    findings_json TEXT DEFAULT '[]',
+    error TEXT DEFAULT '',
+    created_at TEXT DEFAULT (datetime('now')),
+    FOREIGN KEY(document_id) REFERENCES documents(id)
+);
 """
 
 
@@ -246,6 +259,7 @@ class DB:
         self.migrate_paths()
         self.migrate_person_metrics()
         self.migrate_study_date()
+        self.migrate_analyses()
         self._backfill_study_dates()
         self._prune_orphan_files()
 
@@ -286,6 +300,28 @@ class DB:
                 "ALTER TABLE documents ADD COLUMN study_date TEXT DEFAULT ''")
             self.conn.commit()
         return "study_date" in cols
+
+    def migrate_analyses(self):
+        """Asegura la tabla de análisis de estudios (imágenes/DICOM/PDFs)."""
+        cur = self.conn.execute(
+            "SELECT name FROM sqlite_master WHERE type='table' AND name='analyses'")
+        if cur.fetchone() is None:
+            self.conn.execute(
+                """CREATE TABLE analyses (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    document_id INTEGER NOT NULL UNIQUE,
+                    kind TEXT DEFAULT 'image',
+                    status TEXT DEFAULT 'pending',
+                    model TEXT DEFAULT '',
+                    text TEXT DEFAULT '',
+                    findings_json TEXT DEFAULT '[]',
+                    error TEXT DEFAULT '',
+                    created_at TEXT DEFAULT (datetime('now')),
+                    FOREIGN KEY(document_id) REFERENCES documents(id)
+                )""")
+            self.conn.commit()
+            return True
+        return False
 
     def _backfill_study_dates(self):
         """Rellena study_date de documentos PDF ya existentes leyendo la fecha
@@ -827,6 +863,9 @@ class DB:
                     self.conn.execute("DELETE FROM tests WHERE report_id=?", (rid,))
                 self.conn.execute("DELETE FROM reports WHERE person_id=?", (pid,))
                 self.conn.execute("DELETE FROM documents WHERE person_id=?", (pid,))
+                self.conn.execute(
+                    "DELETE FROM analyses WHERE document_id IN "
+                    "(SELECT id FROM documents WHERE person_id=?)", (pid,))
                 self.conn.execute("DELETE FROM meds WHERE person_id=?", (pid,))
                 self.conn.execute("DELETE FROM ai_reports WHERE person_id=?", (pid,))
             self.conn.execute("DELETE FROM person_docs WHERE person_id=?", (pid,))
@@ -936,9 +975,53 @@ class DB:
 
     def documents_for(self, pid: int) -> list[dict]:
         rows = self.conn.execute(
-            "SELECT * FROM documents WHERE person_id=? ORDER BY uploaded_at DESC",
+            """SELECT d.*,
+                      a.status AS analysis_status,
+                      a.model AS analysis_model,
+                      a.text AS analysis_text,
+                      a.findings_json AS analysis_findings,
+                      a.error AS analysis_error,
+                      a.kind AS analysis_kind,
+                      a.created_at AS analysis_at
+               FROM documents d
+               LEFT JOIN analyses a ON a.document_id = d.id
+               WHERE d.person_id=? ORDER BY d.uploaded_at DESC""",
             (pid,)).fetchall()
         return [dict(r) for r in rows]
+
+    def analysis_for(self, doc_id: int) -> dict | None:
+        r = self.conn.execute(
+            "SELECT * FROM analyses WHERE document_id=?", (doc_id,)).fetchone()
+        return dict(r) if r else None
+
+    def analyses_for_person(self, pid: int) -> list[dict]:
+        rows = self.conn.execute(
+            """SELECT a.*, d.orig_filename, d.stored_path, d.kind AS doc_kind,
+                      d.study_date, d.person_id
+               FROM analyses a
+               JOIN documents d ON d.id = a.document_id
+               WHERE d.person_id=? ORDER BY d.uploaded_at DESC""",
+            (pid,)).fetchall()
+        return [dict(r) for r in rows]
+
+    def save_analysis(self, doc_id: int, status: str, model: str = "",
+                      text: str = "", findings: list | None = None,
+                      error: str = "", kind: str = "image"):
+        """Guarda/actualiza el análisis de un documento (estudio)."""
+        if findings is None:
+            findings = []
+        self.conn.execute(
+            """INSERT INTO analyses(document_id, kind, status, model, text,
+               findings_json, error)
+               VALUES(?,?,?,?,?,?,?)
+               ON CONFLICT(document_id) DO UPDATE SET
+                 kind=excluded.kind, status=excluded.status,
+                 model=excluded.model, text=excluded.text,
+                 findings_json=excluded.findings_json, error=excluded.error,
+                 created_at=datetime('now')""",
+            (doc_id, kind, status, model, text,
+             json.dumps(findings, ensure_ascii=False), error))
+        self.conn.commit()
 
     def document(self, doc_id: int) -> dict | None:
         r = self.conn.execute(
@@ -948,6 +1031,7 @@ class DB:
     def del_document(self, pid: int, doc_id: int) -> bool:
         cur = self.conn.execute(
             "DELETE FROM documents WHERE id=? AND person_id=?", (doc_id, pid))
+        self.conn.execute("DELETE FROM analyses WHERE document_id=?", (doc_id,))
         self.conn.commit()
         return cur.rowcount > 0
 

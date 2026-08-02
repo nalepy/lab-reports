@@ -12,6 +12,7 @@ posteriores.
 """
 import json
 import os
+import base64
 import urllib.request
 import urllib.error
 from datetime import datetime
@@ -43,6 +44,26 @@ MODELS = {
         "id": "anthropic/claude-opus-4.8",
     },
 }
+
+# Modelos de visión permitidos para analizar estudios (imágenes/DICOM/PDFs).
+# SOLO modelos baratos de OpenRouter; nunca Opus u otros caros.
+VISION_MODELS = {
+    "gemini-flash": {
+        "label": "Gemini 2.5 Flash (visión)",
+        "id": "google/gemini-2.5-flash",
+    },
+    "gemini-flash-lite": {
+        "label": "Gemini 2.5 Flash Lite",
+        "id": "google/gemini-2.5-flash-lite",
+    },
+    "qwen-vl": {
+        "label": "Qwen3 VL 8B",
+        "id": "qwen/qwen3-vl-8b-instruct",
+    },
+}
+VISION_MODEL = os.environ.get("VISION_MODEL", "gemini-flash")
+if VISION_MODEL not in VISION_MODELS:
+    VISION_MODEL = "gemini-flash"
 
 
 class AIError(Exception):
@@ -88,6 +109,124 @@ def _call_openrouter(model_id: str, messages: list, temperature=0.4) -> str:
         raise AIError(f"Respuesta inesperada de OpenRouter: {data}")
 
 
+def _img_data_url(path: str) -> str:
+    with open(path, "rb") as f:
+        raw = f.read()
+    mime = "image/png"
+    lower = path.lower()
+    if lower.endswith(".jpg") or lower.endswith(".jpeg"):
+        mime = "image/jpeg"
+    elif lower.endswith(".webp"):
+        mime = "image/webp"
+    return f"data:{mime};base64,{base64.b64encode(raw).decode('ascii')}"
+
+
+def _call_openrouter_vision(model_id: str, system: str, user_text: str,
+                            images: list, temperature=0.2) -> str:
+    if not OPENROUTER_KEY or "sk-or-v1-" not in OPENROUTER_KEY:
+        raise AIError(
+            "No hay una API key de OpenRouter configurada. Agregue "
+            "OPENROUTER_API_KEY en data/.env o como variable de entorno "
+            "para usar los modelos de IA.")
+    content: list = [{"type": "text", "text": user_text}]
+    for img in images:
+        content.append({"type": "image_url", "image_url": {"url": _img_data_url(img)}})
+    payload = {
+        "model": model_id,
+        "messages": [
+            {"role": "system", "content": system},
+            {"role": "user", "content": content},
+        ],
+        "temperature": temperature,
+        "max_tokens": 4000,
+    }
+    req = urllib.request.Request(
+        OPENROUTER_URL,
+        data=json.dumps(payload).encode("utf-8"),
+        headers={
+            "Authorization": f"Bearer {OPENROUTER_KEY}",
+            "Content-Type": "application/json",
+            "HTTP-Referer": "http://localhost:8000",
+            "X-Title": "Panel de Laboratorio Clinico",
+        },
+        method="POST",
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=300) as resp:
+            data = json.loads(resp.read().decode("utf-8"))
+    except urllib.error.HTTPError as e:
+        body = e.read().decode("utf-8", errors="replace")[:500]
+        raise AIError(f"OpenRouter HTTP {e.code}: {body}")
+    except urllib.error.URLError as e:
+        raise AIError(f"No se pudo conectar con OpenRouter: {e.reason}")
+    except json.JSONDecodeError:
+        raise AIError("Respuesta inválida de OpenRouter.")
+    try:
+        return data["choices"][0]["message"]["content"]
+    except (KeyError, IndexError):
+        raise AIError(f"Respuesta inesperada de OpenRouter: {data}")
+
+
+def _parse_findings(raw: str) -> list:
+    """Convierte la respuesta de visión a lista de hallazgos estructurados."""
+    text = raw.strip()
+    if text.startswith("```"):
+        text = text.strip("`")
+        if text.startswith("json"):
+            text = text[4:]
+        text = text.strip()
+    try:
+        data = json.loads(text)
+    except json.JSONDecodeError:
+        # intentar extraer el primer arreglo JSON dentro de la respuesta
+        start = text.find("[")
+        end = text.rfind("]")
+        if start != -1 and end > start:
+            try:
+                data = json.loads(text[start:end + 1])
+            except json.JSONDecodeError:
+                data = None
+        else:
+            data = None
+    if not isinstance(data, list):
+        return []
+    out = []
+    for item in data:
+        if isinstance(item, dict):
+            f = {
+                "system": str(item.get("system", "Estudio")),
+                "severity": str(item.get("severity", "normal")),
+                "text": str(item.get("text", "")),
+                "value": item.get("value"),
+                "unit": item.get("unit"),
+            }
+            out.append(f)
+    return out
+
+
+def analyze_image(image_paths: list, hint: str) -> dict:
+    """Analiza imágenes de un estudio (RX, TC, resonancia, PDF, DICOM).
+
+    Devuelve {"text": str, "findings": list} con los hallazgos en español.
+    """
+    model = VISION_MODELS[VISION_MODEL]["id"]
+    system = """Sos un médico especialista en diagnóstico por imágenes. Analizás las
+imágenes de estudios médicos y describís los hallazgos relevantes en español,
+de forma clara y directa.
+Respondé SOLO con JSON, sin texto adicional, un arreglo de objetos con esta forma:
+[{"system": "Nombre del sistema (ej: Radiografía de tórax, TC de cráneo,
+Resonancia de rodilla, Estudio de laboratorio)", "severity": "normal|leve|moderado|severo",
+"text": "Hallazgo descriptivo y concreto", "value": null, "unit": null}]
+Si hay valores numéricos (ej: una glucemia en un PDF de laboratorio), ponelos en
+value/unit. Si un estudio está normal, indicá severity normal."""
+    user = (
+        "Paciente: %s.\nAnalizá el/los estudio(s) adjunto(s) y extraé todos los "
+        "hallazgos relevantes. No inventes hallazgos que no veas." % hint
+    )
+    raw = _call_openrouter_vision(model, system, user, image_paths)
+    return {"text": raw, "findings": _parse_findings(raw)}
+
+
 def _fmt_value(m):
     v = m.get("value")
     if v is None or m.get("status") == "no_realizado":
@@ -106,8 +245,9 @@ def _fmt_value(m):
     return f"{v} {u}{ref}"
 
 
-def _build_prompt(person, assessment, meds, reports) -> list[dict]:
+def _build_prompt(person, assessment, meds, reports, analyses=None) -> list[dict]:
     """Construye el prompt con SOLO el estado actual de cada biomarcador."""
+    analyses = analyses or []
     markers = []
     for m in sorted(assessment["markers"], key=lambda x: x["label"]):
         status_txt = {"normal": "normal", "alto": "ALTO", "bajo": "BAJO"}.get(
@@ -148,6 +288,28 @@ def _build_prompt(person, assessment, meds, reports) -> list[dict]:
         f"  [{r['severity']}] {r['title']}: {r['body']}" +
         (f" ACCION: {r['action']}" if r.get("action") else "")
         for r in assessment["recommendations"][:12])
+
+    # ---- análisis de estudios por imagen (RX, TC, resonancia, DICOM, PDFs) ----
+    ana_lines = []
+    for a in analyses:
+        if a.get("status") != "done":
+            continue
+        findings = []
+        try:
+            findings = json.loads(a.get("findings_json") or "[]")
+        except (json.JSONDecodeError, TypeError):
+            findings = []
+        if not findings:
+            continue
+        fname = a.get("orig_filename") or "estudio"
+        head = f"- {fname}:"
+        for f in findings:
+            val = ""
+            if f.get("value") is not None:
+                val = f" ({f['value']}{' ' + str(f['unit']) if f.get('unit') else ''})"
+            head += f"\n  - [{f.get('severity', 'normal')}] {f.get('system', 'Estudio')}: {f.get('text', '')}{val}"
+        ana_lines.append(head)
+    ana_block = "\n".join(ana_lines)
 
     n_reports = len(reports)
     # el 'date' puede ser NULL (informe subido sin fecha parseable)
@@ -210,7 +372,12 @@ REGLAS DE ORO:
 7. Formato: Markdown con secciones claras. Usa **negritas** para lo crítico.
    Idioma: español.
 8. Si no hay hallazgos críticos ni de precaución, dilo claro y da consejos
-   preventivos breves. No inventes enfermedades."""
+   preventivos breves. No inventes enfermedades.
+9. INCORPORA los hallazgos de estudios de imagen/diagnóstico por imagen
+   (radiografías, tomografías, resonancias, ecografías) que se te entregan:
+   menciónalos en la sección de hallazgos y en las acciones recomendadas,
+   respetando su severidad (normal/leve/moderado/severo). Si no se entrega
+   ninguno, ignora esta regla."""
     # noinspection PyUnresolvedReferences
     user_prompt = f"""PACIENTE: {person['name']}
 INFORMES ANALIZADOS: {n_reports} ({first_date} → {last_date})
@@ -238,6 +405,9 @@ ya verificadas contra la base; intégralas y explícalas si son relevantes):
 RECOMENDACIONES PRELIMINARES (solo orientativas, reescríbelas con criterio):
 {rec_lines}
 
+ESTUDIOS DE IMAGEN Y/O DOCUMENTOS ANALIZADOS (hallazgos extraídos por IA):
+{ana_block if ana_block else '- Sin estudios de imagen analizados'}
+
 Redacta el informe final completo en español."""
     return [
         {"role": "system", "content": system_prompt},
@@ -262,7 +432,8 @@ def generate_report(person, assessment, meds, reports, model_key="deepseek",
                 "saved": True,
             }
     try:
-        messages = _build_prompt(person, assessment, meds, reports)
+        analyses = db.analyses_for_person(pid) if db is not None else []
+        messages = _build_prompt(person, assessment, meds, reports, analyses)
         content = _call_openrouter(MODELS[model_key]["id"], messages)
         report = {
             "model": MODELS[model_key]["label"],

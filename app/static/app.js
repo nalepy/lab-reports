@@ -424,7 +424,13 @@ function renderPerson() {
     </div>
 
     <div class="card" id="docsCard">
-      <div class="card-header">🖼️ Estudios e imágenes adjuntos</div>
+      <div class="card-header">🖼️ Estudios e imágenes adjuntos
+        <span class="card-actions">
+          <button type="button" class="btn btn-sm" onclick="processStudies()" id="processStudiesBtn"
+                  title="Analiza con IA (visión) los estudios sin análisis: RX, TC, resonancia, DICOM y PDFs escaneados">
+            ⚡ Procesar con IA</button>
+        </span>
+      </div>
       <div class="card-body" id="docsBody">
         <p style="color:var(--muted)">Cargando…</p>
       </div>
@@ -1104,8 +1110,34 @@ async function renderDocuments(d) {
   }));
   return `<div class="docs-grid">${items.map((doc) => {
     const compact = !(doc.kind === "image" || doc.kind === "dicom_folder" || doc.kind === "folder");
-    return `<div class="doc-item${compact ? " doc-file" : ""}">${doc.folderList}</div>`;
+    return `<div class="doc-item${compact ? " doc-file" : ""}">${doc.folderList}${analysisBlock(doc)}</div>`;
   }).join("")}</div>`;
+}
+
+function analysisBlock(doc) {
+  const st = doc.analysis_status;
+  if (st === "done") {
+    let findings = [];
+    try { findings = JSON.parse(doc.analysis_findings || "[]"); } catch (e) { findings = []; }
+    const rows = findings.map((f) => {
+      const sev = (f.severity || "normal").toLowerCase();
+      const cls = sev === "severo" || sev === "crítico" ? "red" : sev === "moderado" ? "yellow" : "green";
+      const val = f.value != null ? ` <b>${esc(String(f.value))}${f.unit ? " " + esc(f.unit) : ""}</b>` : "";
+      return `<li class="ana-f-${cls}">[${esc(f.system || "Estudio")}] ${esc(f.text || "")}${val}</li>`;
+    }).join("");
+    const model = doc.analysis_model ? ` · <span style="color:#999">${esc(doc.analysis_model)}</span>` : "";
+    return `<div class="ana-box">
+      <div class="ana-head">🧠 Análisis IA${model}</div>
+      ${rows ? `<ul class="ana-list">${rows}</ul>` : `<p style="color:var(--muted)">Sin hallazgos destacados.</p>`}
+    </div>`;
+  }
+  if (st === "error") {
+    return `<div class="ana-box ana-err">⚠️ Error al analizar: ${esc(doc.analysis_error || "desconocido")}</div>`;
+  }
+  if (st === "pending") {
+    return `<div class="ana-box ana-wait">⏳ Análisis en curso…</div>`;
+  }
+  return "";
 }
 
 async function deleteDocument(docId) {
@@ -1117,6 +1149,34 @@ async function deleteDocument(docId) {
     toast("Documento eliminado", "green");
   } catch (e) {
     toast("Error: " + e.message, "red");
+  }
+}
+
+let _processing = false;
+
+async function processStudies() {
+  if (_processing) return;
+  const pid = state.current;
+  if (!pid) return;
+  _processing = true;
+  const btn = document.getElementById("processStudiesBtn");
+  const body = document.getElementById("docsBody");
+  if (btn) { btn.disabled = true; btn.textContent = "⏳ Analizando…"; }
+  if (body) body.innerHTML = `<p style="color:var(--muted)">Analizando estudios con IA (puede tardar varios minutos)…</p>`;
+  try {
+    const res = await api(`/api/person/${pid}/process-studies`, { method: "POST" });
+    const s = res.summary || {};
+    state.detail = await api(`/api/person/${pid}`);
+    renderPerson();
+    const msg = `Analizados: ${s.analyzed ?? 0} · Errores: ${s.errors ?? 0}`;
+    toast((s.errors ? "Proceso con errores: " : "Procesado: ") + msg,
+      s.errors ? "red" : "green");
+  } catch (e) {
+    toast("Error al procesar: " + e.message, "red");
+    state.detail = await api(`/api/person/${pid}`);
+    renderPerson();
+  } finally {
+    _processing = false;
   }
 }
 
