@@ -233,6 +233,10 @@ class DB:
         return None
 
     def _get_or_create_person(self, report) -> int:
+        return self._get_or_create_person2(report)[0]
+
+    def _get_or_create_person2(self, report) -> tuple[int, bool]:
+        """Resuelve/crea la persona de un informe. Devuelve (id, creada_ahora)."""
         p = self._person_by_doc(report.doc)
         if p is None:
             p = self._fuzzy_person(report.patient_name, report.doc)
@@ -261,7 +265,7 @@ class DB:
                         "UPDATE persons SET doc=? WHERE id=?",
                         (report.doc, p["id"]))
             self.conn.commit()
-            return p["id"]
+            return p["id"], False
         cur = self.conn.execute(
             "INSERT INTO persons(name, doc, sex, age) VALUES(?,?,?,?)",
             (report.patient_name or "DESCONOCIDO", report.doc, report.sex,
@@ -275,7 +279,7 @@ class DB:
             except sqlite3.IntegrityError:
                 pass
         self.conn.commit()
-        return pid
+        return pid, True
 
     # ------------------------------------------------------------- ingest
 
@@ -357,13 +361,17 @@ class DB:
                     "new_reports": 0}
 
         new_count = 0
+        person_ids: set[int] = set()
+        created_any = False
         for r in reports:
             if not r.patient_name:
                 continue
             if self.report_exists(file_hash=sha + f"|{r.lab}|{r.date}"):
                 continue
             # dedupe by same person+date+lab (e.g. ORD61211 vs 61211)
-            pid = self._get_or_create_person(r)
+            pid, created = self._get_or_create_person2(r)
+            person_ids.add(pid)
+            created_any = created_any or created
             dup_report = self.conn.execute(
                 "SELECT id FROM reports WHERE person_id=? AND date=? AND lab=?",
                 (pid, r.date, r.lab)).fetchone()
@@ -392,8 +400,20 @@ class DB:
         self.conn.commit()
         self._upsert_file(path, sha, size, mtime)
         status = "ok" if new_count else "no_new"
-        return {"ok": True, "file": fname, "status": status,
-                "new_reports": new_count, "lab": reports[0].lab if reports else ""}
+        out = {"ok": True, "file": fname, "status": status,
+               "new_reports": new_count,
+               "lab": reports[0].lab if reports else ""}
+        # a qué paciente(s) se asignaron los informes (para detectar subida
+        # en la pestaña equivocada)
+        if person_ids:
+            out["person_ids"] = sorted(person_ids)
+            out["person_id"] = min(person_ids)
+            out["created"] = created_any
+            nm = self.conn.execute(
+                "SELECT name FROM persons WHERE id=?",
+                (out["person_id"],)).fetchone()
+            out["person_name"] = nm["name"] if nm else ""
+        return out
 
     def _upsert_file(self, path, sha, size, mtime):
         self.conn.execute(

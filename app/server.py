@@ -363,6 +363,24 @@ def _store_upload(pid: int, filename: str, content: bytes) -> dict:
                 return {"ok": True, "file": filename, "status": "duplicate",
                         "message": "Duplicado (ya estaba registrado)."}
             if res.get("new_reports", 0) > 0:
+                actual = res.get("person_id")
+                # el PDF se asignó a OTRO paciente (o se creó uno nuevo):
+                # detectar la pestaña equivocada y mover el documento ahí
+                if actual and actual != pid:
+                    created = bool(res.get("created"))
+                    to_name = res.get("person_name") or f"#{actual}"
+                    db.add_document(
+                        actual, filename, str(dest), "pdf", size,
+                        "Informe de laboratorio ingerido (movido al paciente "
+                        "correcto tras detectar el nombre).")
+                    return {
+                        "ok": True, "file": filename, "status": "moved",
+                        "to_pid": actual, "to_name": to_name,
+                        "created": created,
+                        "new_reports": res["new_reports"],
+                        "message": ("Paciente no coincide: movido a "
+                                    f"{to_name}{' (creado)' if created else ''}."),
+                    }
                 db.add_document(pid, filename, str(dest), "pdf", size,
                                 "Informe de laboratorio ingerido.")
                 return {"ok": True, "file": filename, "status": "laboratorio",

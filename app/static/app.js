@@ -917,7 +917,13 @@ async function uploadBatch() {
       box.innerHTML = `<div class="drug-warning sev-border-red"><div class="d-title">Error</div><div>${esc(data.error || "Error al subir")}</div></div>`;
       return;
     }
+    let movedCreated = null;   // {to_pid} cuando se creó paciente por el nombre
     const rows = (data.results || []).map((r) => {
+      if (r.status === "moved") {
+        if (r.created) movedCreated = r.to_pid;
+        return `<div class="up-result" style="color:var(--amber);font-weight:650">
+          🔀 <b>${esc(r.file)}</b> — ${esc(r.message || "movido")}</div>`;
+      }
       const icon = r.ok ? (r.status === "duplicate" ? "🟡" : "✅") : "❌";
       return `<div class="up-result ${r.ok ? "" : "up-err"}">${icon} <b>${esc(r.file)}</b> — ${esc(r.message || r.status)}</div>`;
     }).join("");
@@ -934,6 +940,11 @@ async function uploadBatch() {
     state.detail = await api(`/api/person/${state.current}`);
     await loadPersons();
     renderPerson();
+    // si el PDF creó un paciente nuevo (nombre no existía), abrir su pestaña
+    if (movedCreated) {
+      toast("Se creó un paciente nuevo por el nombre del informe", "yellow");
+      selectPerson(movedCreated);
+    }
   } catch (e) {
     box.innerHTML = `<div class="drug-warning sev-border-red"><div class="d-title">Error</div><div>${esc(e.message)}</div></div>`;
   }
