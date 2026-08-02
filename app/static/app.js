@@ -1127,9 +1127,16 @@ async function uploadBatch() {
     state.detail = await api(`/api/person/${state.current}`);
     await loadPersons();
     renderPerson();
-    // el re-render recrea la tarjeta: reintroducir el resumen de la subida
+    // Los archivos subidos ya figuran en "Estudios e imágenes adjuntos"
+    // (la grilla de abajo). Dejar arriba solo avisos que NO aparecen allí:
+    // duplicados, errores o archivos movidos a otro paciente.
+    const problems = (data.results || []).filter((r) => !r.ok || r.status === "duplicate" || r.status === "moved");
     const fresh = $("#uploadResult");
-    if (fresh) fresh.innerHTML = summaryHtml;
+    if (fresh) {
+      fresh.innerHTML = problems.length
+        ? `<div class="drug-warning sev-border-yellow"><div class="d-title">⚠️ No agregados a la lista de abajo</div>${problems.map((r) => `<div class="up-result">${esc(r.file)} — ${esc(r.message || r.status)}</div>`).join("")}</div>`
+        : "";
+    }
     // si el PDF creó un paciente nuevo (nombre no existía), abrir su pestaña
     if (movedCreated) {
       toast("Se creó un paciente nuevo por el nombre del informe", "yellow");

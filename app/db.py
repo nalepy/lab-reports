@@ -199,6 +199,7 @@ class DB:
         self.conn.commit()
         self.migrate_paths()
         self.migrate_person_metrics()
+        self._prune_orphan_files()
 
     def migrate_person_metrics(self):
         """Agrega columnas de datos vitales manuales a persons (idempotente)."""
@@ -514,6 +515,25 @@ class DB:
             (path, sha, size, mtime))
         self.conn.commit()
 
+    def _prune_orphan_files(self):
+        """Limpia el registro `files` de entradas que ya no referencian ningún
+        informe ni documento vivo (p. ej. archivos de pacientes eliminados).
+        Sin esto, re-subir el mismo PDF se marcaba como "Duplicado" de un
+        paciente que ya no existe."""
+        orphans = self.conn.execute(
+            """SELECT path FROM files f
+               WHERE f.sha1 IS NOT NULL AND f.sha1 != ''
+                 AND NOT EXISTS (SELECT 1 FROM reports r
+                                 WHERE r.file_hash != ''
+                                   AND r.file_hash LIKE f.sha1 || '%')
+                 AND NOT EXISTS (SELECT 1 FROM documents d
+                                 WHERE d.stored_path != ''
+                                   AND d.stored_path = f.path)""").fetchall()
+        if orphans:
+            for r in orphans:
+                self.conn.execute("DELETE FROM files WHERE path=?", (r["path"],))
+            self.conn.commit()
+
     # ------------------------------------------------------------- queries
 
     def persons(self) -> list[dict]:
@@ -593,6 +613,7 @@ class DB:
                 self.conn.execute("DELETE FROM ai_reports WHERE person_id=?", (pid,))
             self.conn.execute("DELETE FROM person_docs WHERE person_id=?", (pid,))
             self.conn.execute("DELETE FROM persons WHERE id=?", (pid,))
+            self._prune_orphan_files()
             self.conn.commit()
 
     def last_ai_report_at(self, pid: int) -> str | None:
