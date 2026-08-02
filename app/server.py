@@ -723,7 +723,8 @@ async def auth_middleware(request: Request, call_next):
     path = request.url.path
     # rutas públicas
     if path in ("/login", "/", "/api/login", "/api/auth-check",
-                "/api/change-password", "/api/logout"):
+                "/api/change-password", "/api/logout",
+                "/api/status"):
         return await call_next(request)
     if path.startswith("/static/"):
         return await call_next(request)
