@@ -46,16 +46,19 @@ async function doLogin(ev) {
   try {
     const fd = new FormData();
     fd.append("password", pw);
-    const res = await fetch("/api/login", { method: "POST", body: fd });
+    const res = await fetch("/api/login", { method: "POST", body: fd, credentials: "same-origin" });
     const data = await res.json();
     if (!res.ok) {
       err.textContent = data.error || "Contraseña incorrecta";
       btn.disabled = false; btn.textContent = "Ingresar";
       return;
     }
-    window.location.href = "/";
+    // login exitoso: navegar al panel
+    window.location.replace("/");
+    // fallback: si el navegador no navegó en 2s, forzar
+    setTimeout(() => { window.location.href = "/"; }, 2000);
   } catch (e) {
-    err.textContent = "Error de conexión";
+    err.textContent = "Error de conexión: " + (e.message || "intente de nuevo");
     btn.disabled = false; btn.textContent = "Ingresar";
   }
   return false;
