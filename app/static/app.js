@@ -344,7 +344,7 @@ function renderMedsForm() {
   return `
   <form class="med-form" onsubmit="return addMed(event)">
     <div class="autocomplete">
-      <input id="medName" list="" placeholder="Nombre del medicamento (ej: metformina)" autocomplete="off"
+      <input id="medName" list="" placeholder="Medicamento o marca (escriba libremente)" autocomplete="off"
              oninput="medAutocomplete()" onfocus="medAutocomplete()">
       <div id="medAutoList" class="autocomplete-list"></div>
     </div>
@@ -352,6 +352,8 @@ function renderMedsForm() {
     <input id="medFreq" placeholder="Frecuencia (ej: 2×/día)">
     <button type="submit">Agregar</button>
   </form>
+  <div class="med-hint">✍️ Escriba <strong>cualquier</strong> medicamento y dosis a mano y pulse
+  “Agregar”, aunque no aparezca en las sugerencias. La lista solo ayuda a autocompletar.</div>
   <div class="med-list">
     ${state.detail.meds.map((m) => `
       <div class="med-item">
@@ -421,6 +423,8 @@ function pickMedDose(i, j) {
 
 async function addMed(ev) {
   ev.preventDefault();
+  const listEl = $("#medAutoList");
+  if (listEl) listEl.innerHTML = "";   // cerrar sugerencias: no bloquean el alta manual
   const name = $("#medName").value.trim();
   if (!name) { toast("Escriba un medicamento", "yellow"); return; }
   try {
