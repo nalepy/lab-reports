@@ -50,6 +50,8 @@ function esc(s) {
 /* ---------------- API ---------------- */
 
 async function api(url, opts) {
+  opts = opts || {};
+  opts.credentials = opts.credentials || "same-origin";
   const res = await fetch(url, opts);
   if (res.status === 401) {
     window.location.href = "/login";

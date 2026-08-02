@@ -58,7 +58,7 @@ def _call_openrouter(model_id: str, messages: list, temperature=0.4) -> str:
         "model": model_id,
         "messages": messages,
         "temperature": temperature,
-        "max_tokens": 4000,
+        "max_tokens": 8000,
     }
     req = urllib.request.Request(
         OPENROUTER_URL,
