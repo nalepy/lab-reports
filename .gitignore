@@ -1,0 +1,11 @@
+__pycache__/
+*.py[cod]
+data/labs.db
+data/password.hash
+data/session.secret
+data/uploads/
+data/library/
+data/.env
+*.log
+/tmp/
+.env

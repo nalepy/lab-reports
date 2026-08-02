@@ -1,0 +1,62 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Panel de Laboratorio Clínico</title>
+<link rel="stylesheet" href="/static/style.css">
+<script src="/static/vendor/chart.umd.min.js"></script>
+<script src="/static/marked.min.js"></script>
+</head>
+<body>
+<div class="banner-warning" id="disclaimerBanner">
+  ⚠️ <strong>ADVERTENCIA IMPORTANTE:</strong> esta herramienta es un apoyo
+  informativo generado por IA. <strong>NO es un médico ni reemplaza una
+  consulta médica.</strong> Los resultados deben ser interpretados por un
+  profesional de la salud. En caso de urgencia (dolor de pecho, falta de aire,
+  sangrado, confusión, fiebre alta) acuda a urgencias de inmediato.
+  <button onclick="this.parentElement.remove()">Entendido</button>
+</div>
+
+<header>
+  <div class="header-row">
+    <h1>🧪 Panel de Laboratorio Clínico</h1>
+    <div class="header-actions">
+      <span id="folderInfo" class="folder-info"></span>
+      <button id="btnRescan" onclick="rescanFolder()">🔄 Buscar archivos nuevos</button>
+      <button onclick="toggleSettings()" style="background:var(--gray);color:#fff;border:none;border-radius:6px;padding:8px 12px;font-weight:600;cursor:pointer">⚙️</button>
+      <span id="scanResult" class="scan-result"></span>
+    </div>
+  </div>
+</header>
+
+<main>
+  <aside id="personList" class="person-list"></aside>
+  <section id="personPanel" class="person-panel">
+    <div id="emptyState" class="empty-state">
+      <h2>Seleccione una persona</h2>
+      <p>Los informes de laboratorio se cargan desde la carpeta de análisis.
+      Use el botón "Buscar archivos nuevos" para ingestar PDFs recién agregados.</p>
+    </div>
+  </section>
+</main>
+
+<div id="toast" class="toast"></div>
+<div class="settings-panel" id="settingsPanel" style="display:none">
+  <div class="settings-card">
+    <h3>⚙️ Configuración</h3>
+    <form onsubmit="return changePassword(event)">
+      <input type="password" id="currentPw" placeholder="Contraseña actual" required>
+      <input type="password" id="newPw" placeholder="Nueva contraseña" required>
+      <input type="password" id="newPw2" placeholder="Repetir nueva contraseña" required>
+      <button type="submit">Cambiar contraseña</button>
+    </form>
+    <div id="settingsMsg"></div>
+    <button class="btn-link" onclick="doLogout()">🔒 Cerrar sesión</button>
+    <button class="btn-link" onclick="toggleSettings()">Cerrar</button>
+  </div>
+</div>
+
+<script src="/static/app.js"></script>
+</body>
+</html>

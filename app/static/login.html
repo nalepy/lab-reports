@@ -1,0 +1,65 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Panel de Laboratorio Clínico — Iniciar sesión</title>
+<style>
+:root { --blue: #1565c0; --bg: #f4f6f8; --card: #ffffff; --border: #e0e4e8;
+        --text: #1a1a1a; --muted: #6b7280; }
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body { font-family: "Segoe UI", system-ui, sans-serif; background: var(--bg);
+       display: flex; align-items: center; justify-content: center;
+       min-height: 100vh; }
+.card { background: var(--card); border-radius: 12px; border: 1px solid var(--border);
+        padding: 40px 32px; width: 100%; max-width: 400px; box-shadow: 0 2px 12px
+        rgba(0,0,0,0.08); text-align: center; }
+h1 { font-size: 22px; color: var(--blue); margin-bottom: 8px; }
+p { color: var(--muted); font-size: 14px; margin-bottom: 24px; }
+input { width: 100%; padding: 12px; border: 1px solid var(--border);
+        border-radius: 8px; font-size: 16px; margin-bottom: 16px; }
+button { width: 100%; padding: 12px; background: var(--blue); color: #fff;
+         border: none; border-radius: 8px; font-size: 16px; font-weight: 600;
+         cursor: pointer; }
+button:hover { background: #0d47a1; }
+button:disabled { opacity: 0.6; cursor: wait; }
+.error { color: #d32f2f; font-size: 13px; margin-top: 8px; min-height: 20px; }
+</style>
+</head>
+<body>
+<div class="card">
+  <h1>🧪 Panel de Laboratorio Clínico</h1>
+  <p>Ingrese la contraseña para acceder a los informes.</p>
+  <form onsubmit="return doLogin(event)">
+    <input type="password" id="password" placeholder="Contraseña" autofocus required>
+    <button type="submit" id="btnLogin">Ingresar</button>
+    <div class="error" id="error"></div>
+  </form>
+</div>
+<script>
+async function doLogin(ev) {
+  ev.preventDefault();
+  const pw = document.getElementById("password").value;
+  const btn = document.getElementById("btnLogin");
+  const err = document.getElementById("error");
+  btn.disabled = true; btn.textContent = "Verificando…"; err.textContent = "";
+  try {
+    const fd = new FormData();
+    fd.append("password", pw);
+    const res = await fetch("/api/login", { method: "POST", body: fd });
+    const data = await res.json();
+    if (!res.ok) {
+      err.textContent = data.error || "Contraseña incorrecta";
+      btn.disabled = false; btn.textContent = "Ingresar";
+      return;
+    }
+    window.location.href = "/";
+  } catch (e) {
+    err.textContent = "Error de conexión";
+    btn.disabled = false; btn.textContent = "Ingresar";
+  }
+  return false;
+}
+</script>
+</body>
+</html>
