@@ -25,6 +25,7 @@ from .db import DB
 from .assessment import build_assessment
 from .sources import sources_for, sources_for_finding
 from . import drugs as drugs_mod
+from . import catalog
 from . import ai_engine
 from . import auth
 
@@ -226,23 +227,12 @@ def del_med(pid: int, mid: int):
 
 @app.get("/api/drugs/search")
 def drug_search(q: str = ""):
-    """Autocompletado de medicamentos conocidos."""
-    qn = q.strip().lower()
-    if not qn:
-        return []
-    out = []
-    for alias, key in drugs_mod.ALIASES.items():
-        if qn in alias:
-            entry = drugs_mod.DRUGS[key]
-            out.append({"name": entry["name"], "alias": alias})
-    # dedupe por nombre
-    seen = set()
-    res = []
-    for o in out:
-        if o["name"] not in seen:
-            seen.add(o["name"])
-            res.append(o)
-    return res[:15]
+    """Autocompletado (live search) desde el catálogo normalizado.
+
+    Devuelve genérico + marcas (global/LATAM/BR/ES) + dosis reales (CIMA).
+    Búsqueda por genérico, marca comercial o alias.
+    """
+    return catalog.search(q, limit=12)
 
 
 # ------------------------------------------------------------------ IA

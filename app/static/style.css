@@ -525,8 +525,23 @@ button.sev-chip:hover { filter: brightness(.96); }
   background: var(--surface); border: 1px solid var(--line); border-radius: 8px;
   max-height: 220px; overflow-y: auto; z-index: 40; box-shadow: var(--shadow-lg);
 }
-.autocomplete-list div { padding: 9px 12px; cursor: pointer; font-size: 13px; }
-.autocomplete-list div:hover { background: var(--serum-wash); }
+.autocomplete-list .ac-row {
+  padding: 9px 12px; border-bottom: 1px solid var(--line-soft);
+}
+.autocomplete-list .ac-row:last-child { border-bottom: none; }
+.ac-main { cursor: pointer; display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; }
+.ac-main:hover .ac-generic { color: var(--serum-deep); }
+.ac-generic { font-weight: 650; font-size: 13.5px; color: var(--ink); }
+.ac-brands { font-size: 11.5px; color: var(--muted); }
+.ac-brands b { color: var(--serum-deep); font-weight: 700; }
+.ac-doses { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 7px; }
+.ac-dose {
+  font-family: var(--font-mono); font-size: 11.5px; font-variant-numeric: tabular-nums;
+  padding: 3px 9px; border: 1px solid var(--serum-line, var(--line));
+  border-radius: 999px; background: var(--surface-2); color: var(--ink-2);
+  cursor: pointer; transition: background .12s, color .12s, border-color .12s;
+}
+.ac-dose:hover { background: var(--serum); color: #fff; border-color: var(--serum); }
 
 /* interacciones de fármacos */
 .drug-warning {

@@ -364,21 +364,59 @@ function renderMedsForm() {
   </div>`;
 }
 
+let _medSearchTimer = null;
 async function medAutocomplete() {
   const q = $("#medName").value.trim();
   const list = $("#medAutoList");
-  if (q.length < 2) { list.innerHTML = ""; return; }
-  try {
-    const res = await api("/api/drugs/search?q=" + encodeURIComponent(q));
-    list.innerHTML = res.map((d) =>
-      `<div onclick="pickMed('${esc(d.name)}')">${esc(d.name)} <span style="color:#999">(${esc(d.alias)})</span></div>`
-    ).join("");
-  } catch (e) { /* silencio */ }
+  if (q.length < 2) { list.innerHTML = ""; state.medAutocomplete = []; return; }
+  clearTimeout(_medSearchTimer);
+  _medSearchTimer = setTimeout(async () => {
+    try {
+      const res = await api("/api/drugs/search?q=" + encodeURIComponent(q));
+      state.medAutocomplete = res;
+      if (!res.length) { list.innerHTML = ""; return; }
+      list.innerHTML = res.map((d, i) => {
+        // marcas: destacar la que coincidió con la búsqueda
+        const brands = (d.brands || []).slice(0, 5);
+        if (d.matched_brand && !brands.includes(d.matched_brand)) brands.unshift(d.matched_brand);
+        const brandHtml = brands.length
+          ? `<span class="ac-brands">${brands.map((b) =>
+              b === d.matched_brand ? `<b>${esc(b)}</b>` : esc(b)).join(" · ")}</span>`
+          : "";
+        const doses = (d.strengths || []).map((s, j) =>
+          `<button type="button" class="ac-dose" onclick="pickMedDose(${i},${j})">${esc(s)}</button>`
+        ).join("");
+        return `<div class="ac-row">
+          <div class="ac-main" onclick="pickMed(${i})">
+            <span class="ac-generic">${esc(d.generic)}</span>
+            ${brandHtml}
+          </div>
+          ${doses ? `<div class="ac-doses">${doses}</div>` : ""}
+        </div>`;
+      }).join("");
+    } catch (e) { /* silencio */ }
+  }, 130);
 }
 
-function pickMed(name) {
-  $("#medName").value = name;
+// seleccionar solo el nombre (genérico normalizado); la dosis queda editable
+function pickMed(i) {
+  const d = state.medAutocomplete[i];
+  if (!d) return;
+  $("#medName").value = d.generic;
   $("#medAutoList").innerHTML = "";
+  const dose = $("#medDose");
+  if (dose) dose.focus();
+}
+
+// seleccionar nombre + dosis real; la dosis sigue siendo editable a mano
+function pickMedDose(i, j) {
+  const d = state.medAutocomplete[i];
+  if (!d) return;
+  $("#medName").value = d.generic;
+  const dose = $("#medDose");
+  if (dose) dose.value = (d.strengths && d.strengths[j]) || "";
+  $("#medAutoList").innerHTML = "";
+  if (dose) dose.focus();
 }
 
 async function addMed(ev) {
@@ -464,6 +502,7 @@ function renderFinding(f) {
     <div class="f-title">${icon} ${esc(m.label)} — ${m.status === "alto" ? "ALTO" : "BAJO"}
       (${fmtNum(m.value, m.unit)}) ${agedBadge}</div>
     <div>${esc(m.text)}</div>
+    ${rangeMeter(m)}
     <div style="margin-top:4px;font-size:12px;color:var(--gray)">Estado según la última medición${dateNote} · ${m.n_measurements} medicion(es)</div>
     ${f.aged ? `<div style="margin-top:4px;font-size:12.5px;color:var(--yellow);font-weight:600">⏳ Este resultado es de un análisis anterior (más de 12 meses). El estado actual puede haber cambiado: conviene repetir el análisis para confirmar.</div>` : ""}
     ${f.stat ? `<div class="rec-stat">📚 ${esc(f.stat)}</div>` : ""}
@@ -599,13 +638,6 @@ function drawChart(canvasId, key, pts) {
 
 /* ---------------- tablas ---------------- */
 
-function lastReportAge(m) {
-  if (!m.last_date) return false;
-  const d = new Date(m.last_date);
-  const now = new Date();
-  return (now - d) / (365.25 * 24 * 3600 * 1000) > 1;  // más de 1 año
-}
-
 function monthKey(dateStr) {
   if (!dateStr) return "";
   const d = new Date(dateStr);
@@ -623,22 +655,7 @@ function renderTables(d) {
   const tests = d.assessment.markers;
   const series = state.detail.assessment.series || {};
 
-  // ---- tabla 1: últimos resultados vs referencia ----
-  const t1rows = tests.filter((m) => m.value != null).map((m) => {
-    const lastDate = m.last_date ? monthLabel(monthKey(m.last_date)) : "";
-    const isAged = m.last_date && lastReportAge(m);
-    const ageIcon = isAged ? ' <span class="aged-icon" title="Resultado de hace mas de 12 meses">⏳</span>' : "";
-    return `
-    <tr>
-      <td>${esc(m.label)} ${lastDate ? `<span style="color:var(--muted);font-size:11px">(${lastDate})</span>` : ""}${ageIcon}</td>
-      <td class="num ${m.status === "alto" ? "val-abnormal-H" : m.status === "bajo" ? "val-abnormal-L" : ""}">${fmtNum(m.value, m.unit)}${rangeMeter(m)}</td>
-      <td class="num">${m.ref_low != null ? fmtNum(m.ref_low, "") : ""}${m.ref_low != null && m.ref_high != null ? " – " : ""}${m.ref_high != null ? fmtNum(m.ref_high, "") : ""}</td>
-      <td>${m.status === "normal" ? '<span class="flag-N">Normal</span>' : m.status === "alto" ? '<span class="flag-H">Alto</span>' : m.status === "bajo" ? '<span class="flag-L">Bajo</span>' : '<span style="color:#999">—</span>'}</td>
-      <td>${trendIcon(m)}</td>
-    </tr>`;
-  }).join("");
-
-  // ---- tabla 2: evolución por mes/año ----
+  // ---- tabla: evolución por mes/año ----
   // agrupar todas las mediciones por (análisis, mes/año); última del mes
   const byMonth = {};   // "YYYY-MM" -> { canonical -> {value, unit, flag, date} }
   const monthOrder = [];
@@ -678,29 +695,16 @@ function renderTables(d) {
   }).join("");
 
   return `
-  <div class="tables-grid">
-    <div>
-      <h4 style="margin-bottom:8px">Evolución por mes/año</h4>
-      <div class="table-wrap">
-        <table>
-          <thead><tr><th>Análisis</th>${t2head}</tr></thead>
-          <tbody>${t2rows}</tbody>
-        </table>
-      </div>
-      <div class="med-hint">Cada columna es un mes/año. Si un análisis no se realizó ese
-      mes, la celda queda vacía. Colores: <span class="flag-H">rojo = alto</span>,
-      <span class="flag-L">amarillo = bajo</span>.</div>
-    </div>
-    <div>
-      <h4 style="margin-bottom:8px">Últimos resultados vs. referencia</h4>
-      <div class="table-wrap">
-        <table>
-          <thead><tr><th>Análisis</th><th>Valor</th><th>Referencia</th><th>Estado</th><th>Tendencia</th></tr></thead>
-          <tbody>${t1rows}</tbody>
-        </table>
-      </div>
-    </div>
-  </div>`;
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>Análisis</th>${t2head}</tr></thead>
+      <tbody>${t2rows}</tbody>
+    </table>
+  </div>
+  <div class="med-hint">Cada columna es un mes/año. Si un análisis no se realizó ese
+  mes, la celda queda vacía. Colores: <span class="flag-H">rojo = alto</span>,
+  <span class="flag-L">amarillo = bajo</span>. El estado actual y el rango de referencia
+  de cada valor anormal se muestran en “Hallazgos anormales”.</div>`;
 }
 
 /* medidor de rango de referencia — elemento firma visual.
@@ -718,13 +722,6 @@ function rangeMeter(m) {
     <div class="range-track"><span class="range-zone-normal"></span><span class="range-tick ${tick}" style="left:${pct.toFixed(1)}%"></span></div>
     <div class="meter-caption"><span>${fmtNum(lo, "")}</span><span>${fmtNum(hi, "")}</span></div>
   </div>`;
-}
-
-function trendIcon(m) {
-  if (m.trend === "subiendo") return `<span class="trend-up">↑ subiendo</span>`;
-  if (m.trend === "bajando") return `<span class="trend-down">↓ bajando</span>`;
-  if (m.trend === "estable") return `<span class="trend-flat">→ estable</span>`;
-  return `<span style="color:#ccc">—</span>`;
 }
 
 /* ---------------- IA ---------------- */

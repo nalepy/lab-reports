@@ -127,6 +127,22 @@ def _build_prompt(person, assessment, meds, reports) -> list[dict]:
         (f" ({m['frequency']})" if m.get("frequency") else "")
         for m in meds) or "- Ninguno registrado"
 
+    # interacciones YA calculadas por el sistema (fármaco-fármaco y fármaco-lab)
+    dc = assessment.get("drug_checks", {}) or {}
+    inter_parts = []
+    for it in dc.get("drug_drug", []):
+        inter_parts.append(
+            f"- [{it.get('severity', '')}] {it.get('drugs', '')}: {it.get('message', '')}")
+    for it in dc.get("drug_lab", []):
+        inter_parts.append(
+            f"- [{it.get('severity', '')}] {it.get('drug', '')} ↔ {it.get('test', '')}: "
+            f"{it.get('message', '')}")
+    if dc.get("unknown_meds"):
+        inter_parts.append(
+            "- Medicamento(s) sin datos de interacción en la base: "
+            + ", ".join(dc["unknown_meds"]))
+    inter_lines = "\n".join(inter_parts) or "- Ninguna interacción detectada por el sistema."
+
     rec_lines = "\n".join(
         f"  [{r['severity']}] {r['title']}: {r['body']}" +
         (f" ACCION: {r['action']}" if r.get("action") else "")
@@ -178,6 +194,10 @@ HALLAZGOS (prioridad alta/media):
 
 MEDICAMENTOS REGISTRADOS:
 {med_lines}
+
+INTERACCIONES DETECTADAS POR EL SISTEMA (fármaco-fármaco y fármaco-laboratorio,
+ya verificadas contra la base; intégralas y explícalas si son relevantes):
+{inter_lines}
 
 RECOMENDACIONES PRELIMINARES (solo orientativas, reescríbelas con criterio):
 {rec_lines}
