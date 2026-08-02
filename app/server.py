@@ -178,11 +178,14 @@ def add_person(p: PersonIn):
 
 
 def _merge_imaging_series(assessment: dict, analyses: list) -> None:
-    """Inyecta hallazgos numéricos de análisis de imagen en la tabla mensual
-    y los gráficos. Crea marcadores sintéticos con key `_ana_<n>` para que
-    `renderTables` los muestre como filas."""
+    """Inyecta hallazgos de análisis de imagen en la tabla mensual y gráficos.
+    - Numéricos: van como marcadores sintéticos `_ana_<n>` con serie, para
+      que `renderTables` los muestre como filas en la columna mensual.
+    - Textuales (sin valor numérico): se agregan a `assessment["_ana_text"]`
+      para que `renderTables` los muestre en una sección aparte."""
     series = assessment.setdefault("series", {})
     markers = assessment.setdefault("markers", [])
+    text_findings = assessment.setdefault("_ana_text", [])
     n = 0
     for a in analyses:
         if a.get("status") != "done":
@@ -194,31 +197,40 @@ def _merge_imaging_series(assessment: dict, analyses: list) -> None:
         if not isinstance(findings, list):
             continue
         adate = (a.get("created_at") or "")[:10]
+        fname = a.get("orig_filename") or "estudio"
         for f in findings:
-            v = f.get("value")
-            if v is None or isinstance(v, bool):
-                continue
-            try:
-                fv = float(v)
-            except (TypeError, ValueError):
-                continue
             system = str(f.get("system", "Estudio")).strip() or "Estudio"
+            text = str(f.get("text", "")).strip()
             unit = str(f.get("unit") or "").strip()
-            skey = f"_ana_{n}"
-            label = f"{system} — {str(f.get('text', '')).split('.')[0][:60]}"
-            marker = {
-                "key": skey,
-                "label": label,
-                "value": fv,
+            severity = str(f.get("severity", "normal"))
+            v = f.get("value")
+            if v is not None and not isinstance(v, bool):
+                try:
+                    fv = float(v)
+                except (TypeError, ValueError):
+                    fv = None
+                if fv is not None:
+                    skey = f"_ana_{n}"
+                    label = f"{system} — {text.split('.')[0][:60]}"
+                    markers.append({
+                        "key": skey, "label": label,
+                        "value": fv, "unit": unit,
+                        "status": "normal", "last_date": adate,
+                        "n_measurements": 1, "trend": "",
+                    })
+                    series[skey] = [{"name": label, "date": adate,
+                                     "value": fv, "unit": unit}]
+                    n += 1
+                    continue
+            # textual / sin valor numérico
+            text_findings.append({
+                "system": system,
+                "text": text.split(".")[0][:120] if text else system,
+                "severity": severity,
                 "unit": unit,
-                "status": "normal",
-                "last_date": adate,
-                "n_measurements": 1,
-                "trend": "",
-            }
-            markers.append(marker)
-            series[skey] = [{"name": label, "date": adate, "value": fv, "unit": unit}]
-            n += 1
+                "file": fname,
+                "date": adate,
+            })
 
 
 @app.get("/api/person/{pid}")
@@ -271,6 +283,11 @@ def person_detail(pid: int):
             r["sources"] = sources_for("obesity_risk")
         elif "FUMAR" in r["title"].upper() or "TABAQ" in r["title"].upper():
             r["sources"] = sources_for("smoking_risk")
+    # marcar PDFs que ya están en el historial (reports) — se ocultan de la
+    # grilla de estudios para no duplicar
+    parsed_stored = {r.get("stored_path") for r in reports if r.get("stored_path")}
+    for d in documents:
+        d["is_parsed_lab"] = 1 if d.get("kind") == "pdf" and d.get("stored_path") in parsed_stored else 0
     # aviso de datos nuevos desde el último informe IA
     last_rep = db.last_ai_report_at(pid)
     last_rep_n = (last_rep or "").replace("T", " ").split(".")[0]

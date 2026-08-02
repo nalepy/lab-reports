@@ -941,6 +941,20 @@ function renderTables(d) {
     return `<tr>${nameCell}${cells}</tr>`;
   }).join("");
 
+  // ---- hallazgos textuales de análisis de imagen (sin valor numérico) ----
+  const anaText = (d.assessment && d.assessment._ana_text) || [];
+  const textBlock = anaText.length ? `
+    <div class="ana-text-card">
+      <div class="ana-text-head">📄 Hallazgos de estudios (imágenes, DICOM, PDFs analizados)</div>
+      ${anaText.map((t) => {
+        const sev = (t.severity || "normal").toLowerCase();
+        const cls = sev === "severo" || sev === "crítico" ? "red" : sev === "moderado" ? "yellow" : "green";
+        return `<div class="ana-text-row ana-f-${cls}">
+          <span class="ana-text-badge ${cls}">${esc(t.severity || "normal")}</span>
+          <strong>${esc(t.system)}</strong> — ${esc(t.text)}${t.date ? ` <span class="ana-text-date">(${esc(t.date)})</span>` : ""}</div>`;
+      }).join("")}
+    </div>` : "";
+
   return `
   <div class="table-wrap">
     <table>
@@ -951,7 +965,8 @@ function renderTables(d) {
   <div class="med-hint">Cada columna es un mes/año. Si un análisis no se realizó ese
   mes, la celda queda vacía. Colores: <span class="flag-H">rojo = alto</span>,
   <span class="flag-L">amarillo = bajo</span>. El estado actual y el rango de referencia
-  de cada valor anormal se muestran en “Hallazgos anormales”.</div>`;
+  de cada valor anormal se muestran en “Hallazgos anormales”.</div>
+  ${textBlock}`;
 }
 
 /* texto del rango deseado de referencia para tooltips (siempre escapado:
@@ -1062,9 +1077,11 @@ async function folderFiles(docId) {
 }
 
 async function renderDocuments(d) {
-  const docs = d.documents || [];
+  // ocultar PDFs que ya están en el historial (no duplicar)
+  const docs = (d.documents || []).filter(
+    (doc) => !(doc.kind === "pdf" && doc.is_parsed_lab));
   if (!docs.length) {
-    return `<p style="color:var(--muted)">No hay estudios adjuntos todavía. Suba imágenes, radiografías, IRM, informes PDF, carpetas DICOM, etc.</p>`;
+    return `<p style="color:var(--muted)">No hay imágenes, radiografías, tomografías o estudios pendientes. Los PDFs de laboratorio ya están en el historial.</p>`;
   }
   // resolver listados de carpetas en paralelo
   const items = await Promise.all(docs.map(async (doc) => {
