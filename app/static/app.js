@@ -1289,7 +1289,7 @@ async function uploadBatch() {
       if (done % 25 === 0 || done === totalN) {
         const parts = [];
         if (converted) parts.push(`${converted} convertidos`);
-        if (unparsed) parts.push(`${unparsed} no DICOM`);
+        if (unparsed) parts.push(`${unparsed} sin convertir`);
         if (errors) parts.push(`${errors} errores`);
         box.innerHTML = `<p style="color:var(--muted)">⏳ Procesando… ${done}/${totalN} (${parts.join(", ")})</p>`;
       }
@@ -1301,13 +1301,6 @@ async function uploadBatch() {
   }
   _pendingUpload = [];
   list.innerHTML = "";
-  if (!converted && failedConv > 0 && nDcm > 0) {
-    box.innerHTML = `<div class="drug-warning sev-border-red"><div class="d-title">Error de conversión</div>
-      <div>No se pudo convertir ningún DICOM (${failedConv} errores). Los archivos pueden tener un formato no soportado por el navegador.<br>
-      <b>Comprima la carpeta en ZIP</b> y arrastre el ZIP aquí — el servidor procesa los DICOM directamente.</div></div>`;
-    _uploadBusy = false;
-    return;
-  }
 
   // --- PASO 3: confirmar subida con tamaño real ---
   const uploadBytes = [...fd].reduce((s, pair) => s + (pair[1].size || 0), 0);
@@ -1319,10 +1312,11 @@ async function uploadBatch() {
     return;
   }
   let summary = `${totalUpload} archivo(s) (≈ ${uploadMb} MB)`;
-  if (converted) summary += ` · ${converted} DICOM convertidos`;
-  if (failedConv) summary += ` · ${failedConv} sin convertir (no se suben)`;
-  if (totalUpload > 200 && !confirm(`¿Subir ${summary}?\n\nSon muchos archivos individuales — puede demorar y consumir memoria.\n• Aceptar = subir ahora\n• Cancelar = comprima la carpeta en ZIP`)) {
-    box.innerHTML = `<div class="drug-warning sev-border-yellow"><div class="d-title">Cancelado</div><div>Comprima la carpeta en ZIP y arrastre el ZIP aquí.</div></div>`;
+  if (converted) summary += ` · ${converted} DICOM convertidos a JPG`;
+  if (unparsed) summary += ` · ${unparsed} DICOM raw (se procesarán en el servidor)`;
+  if (errors) summary += ` · ${errors} con errores`;
+  if (totalUpload > 200 && !confirm(`¿Subir ${summary}?\n\n• Los DICOM que no pudieron convertirse en el navegador se suben en formato original y se procesarán al hacer "Procesar con IA".\n\n¿Subir ahora?`)) {
+    box.innerHTML = `<div class="drug-warning sev-border-yellow"><div class="d-title">Cancelado</div><div>Puede comprimir la carpeta en ZIP y arrastrar el ZIP.</div></div>`;
     _uploadBusy = false;
     return;
   }
