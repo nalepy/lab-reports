@@ -336,10 +336,9 @@ function renderPerson() {
               <option value="opus">Opus 4.8</option>
             </select>
           </label>
-          <button id="aiGenBtn" onclick="generateAIReport()" style="background:var(--blue);color:#fff;border:none;border-radius:6px;padding:8px 16px;font-weight:600;cursor:pointer">✨ Generar informe IA</button>
         </div>
-        <div class="med-hint">DeepSeek V4 Pro es el modelo por defecto. Si no queda
-        conforme con el informe, puede regenerarlo con <strong>Opus 4.8</strong>.</div>
+        <div class="med-hint">Use el botón fijo <strong>AI update</strong> (derecha) para generar o
+        actualizar el informe y el análisis de estudios. Preferencia de modelo arriba.</div>
         <div id="aiResult" style="margin-top:12px"></div>
       </div>
     </div>
@@ -439,13 +438,7 @@ function renderPerson() {
     </div>
 
     <div class="card" id="docsCard">
-      <div class="card-header">🖼️ Estudios e imágenes adjuntos
-        <span class="card-actions">
-          <button type="button" class="btn btn-sm" onclick="processStudies()" id="processStudiesBtn"
-                  title="Analiza con IA (visión) los estudios sin análisis: RX, TC, resonancia, DICOM y PDFs escaneados">
-            ⚡ Procesar con IA</button>
-        </span>
-      </div>
+      <div class="card-header">🖼️ Estudios e imágenes adjuntos</div>
       <div class="card-body" id="docsBody">
         <p style="color:var(--muted)">Cargando…</p>
       </div>
@@ -1026,12 +1019,10 @@ async function autoLoadAIReport() {
     const data = await res.json();
     if (data.error) {
       state.aiReportExists = false;
-      updateAIButtonLabel();
-      box.innerHTML = `<p style="color:var(--muted)">Sin informe generado aún. Use "Generar informe IA".</p>`;
+      box.innerHTML = `<p style="color:var(--muted)">Sin informe generado aún. Use el botón <strong>AI update</strong> (derecha).</p>`;
       return;
     }
     state.aiReportExists = true;
-    updateAIButtonLabel();
     box.innerHTML = `
       <div style="font-size:12px;color:var(--muted);margin-bottom:6px">
         ${data.saved ? '📋 Informe guardado' : '✨ Recién generado'} con <strong>${esc(data.model)}</strong> · ${esc(data.generated_at)}</div>
@@ -1049,39 +1040,7 @@ function renderFallbackNotice(res) {
   </div>`;
 }
 
-function updateAIButtonLabel() {
-  const btn = $("#aiGenBtn");
-  if (!btn) return;
-  btn.textContent = state.aiReportExists
-    ? "🔄 Regenerar informe IA"
-    : "✨ Generar informe IA";
-}
 
-async function generateAIReport() {
-  // Un solo botón: si ya hay informe guardado/renderizado, se REGENERA
-  // (fuerza recálculo con los datos nuevos); si no, se genera por primera vez.
-  const force = state.aiReportExists;
-  const model = $("#aiModel") ? $("#aiModel").value : "deepseek";
-  const box = $("#aiResult");
-  box.innerHTML = `<p style="color:var(--muted)">⏳ ${force ? "Regenerando" : "Generando"} informe con IA (${esc(model)}), puede tardar 30-90 segundos…</p>`;
-  try {
-    const res = await api(`/api/person/${state.current}/ai-report?model=${encodeURIComponent(model)}&force=${force ? "true" : "false"}`, { method: "POST" });
-    if (res.error) {
-      box.innerHTML = `<div class="drug-warning sev-border-red"><div class="d-title">Error del servicio de IA</div><div>${esc(res.error)}</div></div>`;
-      return;
-    }
-    state.aiReportExists = true;
-    updateAIButtonLabel();
-    if (state.current) clearAIDirty(state.current);
-    box.innerHTML = `
-      <div style="font-size:12px;color:var(--muted);margin-bottom:6px">
-        ${res.saved ? "📋 Informe guardado" : "✨ Recién generado"} con <strong>${esc(res.model)}</strong> · ${esc(res.generated_at)}</div>
-      ${res.fallback ? renderFallbackNotice(res) : ""}
-      <div class="ai-report-body">${marked.parse(res.content)}</div>`;
-  } catch (e) {
-    box.innerHTML = `<div class="drug-warning sev-border-red"><div class="d-title">Error</div><div>${esc(e.message)}</div></div>`;
-  }
-}
 
 /* ---------------- documentos adjuntos ---------------- */
 
@@ -1416,36 +1375,6 @@ async function deleteDocument(docId) {
     markAIDirty(state.current);
   } catch (e) {
     toast("Error: " + e.message, "red");
-  }
-}
-
-let _processing = false;
-
-async function processStudies() {
-  if (_processing) return;
-  const pid = state.current;
-  if (!pid) return;
-  _processing = true;
-  const btn = document.getElementById("processStudiesBtn");
-  const body = document.getElementById("docsBody");
-  if (btn) { btn.disabled = true; btn.textContent = "⏳ Analizando…"; }
-  if (body) body.innerHTML = `<p style="color:var(--muted)">Analizando estudios con IA (puede tardar varios minutos)…</p>`;
-  try {
-    const res = await api(`/api/person/${pid}/process-studies`, { method: "POST" });
-    const s = res.summary || {};
-    state.detail = await api(`/api/person/${pid}`);
-    renderPerson();
-    const msg = `Analizados: ${s.analyzed ?? 0} · Errores: ${s.errors ?? 0}`;
-    toast((s.errors ? "Proceso con errores: " : "Procesado: ") + msg,
-      s.errors ? "red" : "green");
-    // hallazgos listos en la carpeta; el informe principal se actualiza con "AI update"
-    if ((s.analyzed ?? 0) > 0) markAIDirty(pid);
-  } catch (e) {
-    toast("Error al procesar: " + e.message, "red");
-    state.detail = await api(`/api/person/${pid}`);
-    renderPerson();
-  } finally {
-    _processing = false;
   }
 }
 
@@ -2029,8 +1958,21 @@ function updateAIStaleUI() {
     fab.classList.toggle("needs-update", dirty && !running);
     fab.classList.toggle("running", running);
     fab.disabled = running;
+    const icon = fab.querySelector(".ai-fab-icon");
     const lab = fab.querySelector(".ai-fab-label");
-    if (lab) lab.textContent = running ? "Updating…" : "AI update";
+    if (running) {
+      if (icon) icon.textContent = "⏳";
+      if (lab) lab.textContent = "Updating…";
+      fab.title = "Actualización de IA en curso…";
+    } else if (dirty) {
+      if (icon) icon.textContent = "⚠️";
+      if (lab) lab.textContent = "Update IA";
+      fab.title = `${state.aiDirtyPids.size} paciente(s) con informe IA desactualizado — clic para actualizar`;
+    } else {
+      if (icon) icon.textContent = "🧠";
+      if (lab) lab.textContent = "AI update";
+      fab.title = "Informes IA al día";
+    }
   }
 }
 
