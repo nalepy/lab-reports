@@ -408,6 +408,7 @@ function renderPerson() {
           <label class="up-mode"><input type="checkbox" id="uploadConvertDicom" checked>
             <span>Convertir DICOM a imagen/video antes de subir (más liviano y se ve en el navegador)</span></label>
           <div class="med-hint">La subida comienza automáticamente al elegir o soltar archivos/carpetas.</div>
+          <div class="med-hint" style="margin-top:4px">💡 Si una carpeta tiene muchos DICOM, <b>compáctela en ZIP</b> y súbala como archivo: el servidor la descomprime automáticamente.</div>
           <input type="file" id="uploadFiles" class="upload-input" multiple
                  accept=".pdf,.jpg,.jpeg,.png,.gif,.webp,.bmp,.tif,.tiff,.dcm,.dicom,.zip,.doc,.docx,.txt,.csv"
                  onchange="onUploadPicked()">
@@ -1266,9 +1267,16 @@ async function uploadBatch() {
   }
   _pendingUpload = [];
   list.innerHTML = "";
-  box.innerHTML = `<p style="color:var(--muted)">⏳ Subiendo y clasificando ${files.length} archivo(s)…</p>`;
+  const totalKb = files.reduce((s, f) => s + f.size, 0);
+  box.innerHTML = `<p style="color:var(--muted)">⏳ Subiendo ${files.length} archivo(s) (${(totalKb / 1024).toFixed(1)} MB)… puede tardar varios minutos si los archivos están en la nube.</p>`;
+  // timeout 150s para evitar que el navegador cuelgue sin feedback
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), 150000);
   try {
-    const res = await fetch(`/api/person/${state.current}/upload-batch`, { method: "POST", body: fd });
+    const res = await fetch(`/api/person/${state.current}/upload-batch`, {
+      method: "POST", body: fd, signal: controller.signal,
+    });
+    clearTimeout(timeoutId);
     const data = await res.json();
     if (!res.ok || data.error) {
       box.innerHTML = `<div class="drug-warning sev-border-red"><div class="d-title">Error</div><div>${esc(data.error || "Error al subir")}</div></div>`;
@@ -1301,9 +1309,6 @@ async function uploadBatch() {
     state.detail = await api(`/api/person/${state.current}`);
     await loadPersons();
     renderPerson();
-    // Los archivos subidos ya figuran en "Estudios e imágenes adjuntos"
-    // (la grilla de abajo). Dejar arriba solo avisos que NO aparecen allí:
-    // duplicados, errores o archivos movidos a otro paciente.
     const problems = (data.results || []).filter((r) => !r.ok || r.status === "duplicate" || r.status === "moved");
     const fresh = $("#uploadResult");
     if (fresh) {
@@ -1311,21 +1316,28 @@ async function uploadBatch() {
         ? `<div class="drug-warning sev-border-yellow"><div class="d-title">⚠️ No agregados a la lista de abajo</div>${problems.map((r) => `<div class="up-result">${esc(r.file)} — ${esc(r.message || r.status)}</div>`).join("")}</div>`
         : "";
     }
-    // si el PDF creó un paciente nuevo (nombre no existía), abrir su pestaña
     if (movedCreated) {
       toast("Se creó un paciente nuevo por el nombre del informe", "yellow");
       selectPerson(movedCreated);
     }
-    // informes con paciente no reconocido: pedir confirmación antes de crear
     const pending = (data.results || []).filter((r) => r.status === "pending");
     if (pending.length) {
       _pendingQueue = pending.flatMap((r) => r.pending || []);
       _showNextPending();
     }
-    // encolar regeneración del informe IA en segundo plano (no bloquea)
     ensureAIRepos();
   } catch (e) {
-    box.innerHTML = `<div class="drug-warning sev-border-red"><div class="d-title">Error</div><div>${esc(e.message)}</div></div>`;
+    clearTimeout(timeoutId);
+    if (e.name === "AbortError") {
+      box.innerHTML = `<div class="drug-warning sev-border-red"><div class="d-title">⏱ Tiempo de espera agotado</div>
+        <div>La subida tardó demasiado (más de 2:30 min). Posibles causas:<br>
+        • Los archivos están en la nube (Google Drive, OneDrive) y no están sincronizados localmente.
+          <b>Antes de subir, haga clic derecho → "Make available offline"</b> o abra cada archivo primero.<br>
+        • Son muchos archivos grandes. Pruebe <b>comprimir la carpeta en ZIP</b> y subir el ZIP directamente.</div></div>`;
+    } else {
+      box.innerHTML = `<div class="drug-warning sev-border-red"><div class="d-title">Error de conexión</div>
+        <div>${esc(e.message || "Error desconocido")}. Verifique su conexión a internet o intente comprimir la carpeta en ZIP y subir el ZIP.</div></div>`;
+    }
   } finally {
     _uploadBusy = false;
   }
