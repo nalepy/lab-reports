@@ -1303,6 +1303,14 @@ function _dosDateTime(d) {
   return { time, date };
 }
 
+// Solo se dejan pasar (sin convertir) documentos seguros; el resto (software,
+// binarios) se omite y nunca llega al servidor.
+const _SAFE_DOC_EXT = new Set([
+  ".pdf", ".doc", ".docx", ".xls", ".xlsx", ".txt", ".csv",
+  ".jpg", ".jpeg", ".png", ".gif", ".webp", ".bmp", ".tif", ".tiff",
+  ".dcm", ".dicom"
+]);
+
 // Diferencia relativa media entre dos firmas perceptuales [0..1].
 // 0 = idénticas; ~0.5 = muy distintas.
 function _sigDiff(a, b) {
@@ -1441,10 +1449,18 @@ async function uploadBatch() {
           if (res.kind === "video") lastSig = null; // el video rompe la secuencia
         }
       } else if (res && res.kind === "unparsed" && res.dicom === false) {
-        // no es DICOM → se guarda el original
-        await _opfsWrite(tmpDir, f.webkitRelativePath || f.name, f);
-        passthrough++;
-        lastSig = null;
+        // no es DICOM → se guarda el original SOLO si es un documento seguro
+        const relName = f.webkitRelativePath || f.name || "";
+        const dot = relName.lastIndexOf(".");
+        const fext = dot >= 0 ? relName.slice(dot).toLowerCase() : "";
+        if (_SAFE_DOC_EXT.has(fext)) {
+          await _opfsWrite(tmpDir, relName, f);
+          passthrough++;
+          lastSig = null;
+        } else {
+          // software/binarios/dangerous → no se sube
+          skipped++;
+        }
       } else {
         // DICOM que no se pudo convertir → se omite (nunca se sube raw)
         skipped++;
@@ -1482,7 +1498,7 @@ async function uploadBatch() {
   if (converted) summary += ` · ${converted} DICOM convertidos a JPG`;
   if (passthrough) summary += ` · ${passthrough} no-DICOM pasados`;
   if (deduped) summary += ` · ${deduped} casi-idénticos descartados`;
-  if (skipped) summary += ` · ${skipped} DICOM omitidos`;
+  if (skipped) summary += ` · ${skipped} omitidos`;
   if (totalUpload > 200 && !confirm(`¿Subir ${summary}?\n\n• Se empaqueta en ZIP(s) de ≤90 MB y el servidor los descomprime.\n\n¿Subir ahora?`)) {
     await _purgeDir(tmpDir).catch(() => {});
     try { await rootDir.removeEntry(tmpName); } catch (e) { /* noop */ }

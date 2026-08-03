@@ -618,6 +618,18 @@ _OTHER_EXT = {".pdf", ".dcm", ".dicom", ".zip", ".doc", ".docx", ".xls",
 
 ALLOWED_EXT = _IMAGE_EXT | _OTHER_EXT
 
+# Extensiones de software/binarios que nunca deben llegar a la galería
+# (client-side ya las omite; esto es defensa en profundidad).
+_UNSAFE_EXT = {".exe", ".dll", ".sys", ".so", ".dylib", ".bin", ".dat",
+               ".bat", ".cmd", ".com", ".scr", ".msi", ".ocx", ".vbs",
+               ".js", ".jar", ".class", ".ps1", ".sh", ".py", ".ini",
+               ".cfg", ".conf", ".sys32", ".manifest", ".pdb"}
+
+
+def _is_unsafe_ext(fname: str) -> bool:
+    ext = "." + fname.lower().rsplit(".", 1)[-1] if "." in fname else ""
+    return ext in _UNSAFE_EXT
+
 
 def _kind_for(fname: str) -> str:
     ext = "." + fname.lower().rsplit(".", 1)[-1] if "." in fname else ""
@@ -927,8 +939,8 @@ async def upload_folder(pid: int, files: list[UploadFile] = File(...),
             continue
         try:
             data = await f.read()
-            if dest.suffix.lower() in (".dcm", ".dicom") or _is_dicom_bytes(data):
-                # DICOM en bruto nunca se guarda
+            if _is_unsafe_ext(rel) or dest.suffix.lower() in (".dcm", ".dicom") or _is_dicom_bytes(data):
+                # software/binarios o DICOM en bruto nunca se guardan
                 skipped += 1
                 continue
             with open(dest, "wb") as fh:
@@ -950,8 +962,8 @@ async def upload_folder(pid: int, files: list[UploadFile] = File(...),
                         target.parent.mkdir(parents=True, exist_ok=True)
                         if not m.endswith("/"):
                             data = z.read(m)
-                            if target.suffix.lower() in (".dcm", ".dicom") or _is_dicom_bytes(data):
-                                # DICOM en bruto nunca se guarda (ni por ZIP)
+                            if _is_unsafe_ext(m) or target.suffix.lower() in (".dcm", ".dicom") or _is_dicom_bytes(data):
+                                # software/binarios o DICOM en bruto nunca se guardan (ni por ZIP)
                                 continue
                             with open(target, "wb") as out:
                                 out.write(data)
