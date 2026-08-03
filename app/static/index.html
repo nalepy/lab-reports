@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Panel de Laboratorio Clínico</title>
-<link rel="stylesheet" href="/static/style.css?v=20260805a">
+<link rel="stylesheet" href="/static/style.css?v=20260805g">
 <script src="/static/vendor/chart.umd.min.js"></script>
 <script src="/static/marked.min.js"></script>
 <script src="/static/dicom-convert.js?v=20260805e"></script>
@@ -98,31 +98,37 @@
 </div>
 
 <div id="toast" class="toast"></div>
-<div id="galleryModal" class="gallery-overlay" style="display:none" onclick="galleryBackdrop(event)">
-  <button class="gallery-close" onclick="closeGallery()" title="Cerrar (Esc)" aria-label="Cerrar">✕</button>
-  <button class="gallery-nav gallery-prev" onclick="galleryStep(-1)" title="Anterior (←)" aria-label="Anterior">‹</button>
-  <button class="gallery-nav gallery-next" onclick="galleryStep(1)" title="Siguiente (→)" aria-label="Siguiente">›</button>
-  <div class="gallery-stage">
-    <div class="gallery-header">
-      <div id="galleryTitle" class="gallery-title"></div>
+<div id="galleryModal" class="gallery-overlay" style="display:none">
+  <div class="gallery-header">
+    <div id="galleryTitle" class="gallery-title"></div>
+    <div class="gallery-header-btns">
+      <button class="gallery-btn gallery-img-back" id="galleryImgBack" onclick="galleryShowThumbs()" title="Volver a miniaturas" aria-label="Volver a miniaturas">‹</button>
+      <button class="gallery-close" id="galleryCloseBtn" onclick="galleryClose()" title="Cerrar / volver a miniaturas (Esc)" aria-label="Cerrar">✕</button>
     </div>
+  </div>
+
+  <!-- VISTA 1: rejilla de miniaturas paginada -->
+  <div id="galleryThumbsView" class="gallery-thumbs-view">
+    <div id="galleryThumbsGrid" class="gallery-thumbs-grid"></div>
+    <div class="gallery-pager">
+      <button class="gallery-pager-btn" id="galPrevPage" onclick="galleryPage(-1)" title="Página anterior" aria-label="Página anterior">‹ Anterior</button>
+      <span id="galleryPageInfo" class="gallery-page-info"></span>
+      <button class="gallery-pager-btn" id="galNextPage" onclick="galleryPage(1)" title="Página siguiente" aria-label="Página siguiente">Siguiente ›</button>
+    </div>
+  </div>
+
+  <!-- VISTA 2: imagen en grande con zoom -->
+  <div id="galleryImgView" class="gallery-img-view" style="display:none">
+    <button class="gallery-nav gallery-prev" id="galPrevImg" onclick="galleryStep(-1)" title="Anterior (←)" aria-label="Anterior">‹</button>
     <div class="gallery-pan" id="galleryPan">
       <img id="galleryImg" alt="Imagen de estudio" draggable="false">
     </div>
-    <div class="gallery-toolbar">
-      <button data-nav onclick="galleryGoto(0)" title="Primera (Inicio)" aria-label="Primera">⏮</button>
-      <button data-nav onclick="galleryStep(-1)" title="Anterior (←)" aria-label="Anterior">‹</button>
-      <span class="gallery-count" id="galleryCounter"></span>
-      <button data-nav onclick="galleryStep(1)" title="Siguiente (→)" aria-label="Siguiente">›</button>
-      <button data-nav onclick="galleryGoto(-1)" title="Última (Fin)" aria-label="Última">⏭</button>
-      <span class="gallery-sep"></span>
-      <button onclick="galleryZoom(1.25)" title="Acercar (+, rueda del ratón)" aria-label="Acercar">＋</button>
-      <button onclick="galleryZoom(0.8)" title="Alejar (−, rueda del ratón)" aria-label="Alejar">－</button>
-      <button onclick="galleryResetZoom()" title="Restablecer zoom (0)" aria-label="Restablecer">1:1</button>
-      <span class="gallery-sep"></span>
-      <button id="galleryThumbsBtn" onclick="galleryToggleThumbs()" title="Mostrar/ocultar miniaturas" aria-label="Miniaturas">▦</button>
+    <button class="gallery-nav gallery-next" id="galNextImg" onclick="galleryStep(1)" title="Siguiente (→)" aria-label="Siguiente">›</button>
+    <div class="gallery-zoombar">
+      <button onclick="galleryZoom(1.2)" title="Acercar (rueda hacia arriba)" aria-label="Acercar">＋</button>
+      <button onclick="galleryResetZoom()" title="Ajustar a pantalla (doble clic)" aria-label="Ajustar">⤢</button>
+      <button onclick="galleryZoom(1/1.2)" title="Alejar (rueda hacia abajo)" aria-label="Alejar">－</button>
     </div>
-    <div class="gallery-thumbs" id="galleryThumbs"></div>
   </div>
 </div>
 <div class="settings-panel" id="settingsPanel" style="display:none">
@@ -140,6 +146,6 @@
   </div>
 </div>
 
-<script src="/static/app.js?v=20260805f"></script>
+<script src="/static/app.js?v=20260805g"></script>
 </body>
 </html>

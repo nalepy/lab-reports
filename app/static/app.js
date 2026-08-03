@@ -1086,14 +1086,22 @@ async function folderFiles(docId) {
 
 /* ---------------- galería a pantalla completa ---------------- */
 
+const _GAL_PER_PAGE = 24;
+
+let _docTitleCache = {};
+
 let _gallery = {
-  urls: [], idx: 0, zoom: 1, panX: 0, panY: 0, thumbs: true,
+  urls: [], idx: 0, page: 0, zoom: 1, panX: 0, panY: 0, view: "thumbs",
 };
 
 function _galleryApplyView() {
   const img = $("#galleryImg");
   const { zoom, panX, panY } = _gallery;
-  img.style.transform = `translate3d(${panX}px, ${panY}px, 0) scale(${zoom})`;
+  if (zoom <= 1.001) {
+    img.style.transform = "";
+  } else {
+    img.style.transform = `translate3d(${panX}px, ${panY}px, 0) scale(${zoom})`;
+  }
   img.style.cursor = zoom > 1.001 ? "grab" : "";
 }
 
@@ -1109,32 +1117,56 @@ function _galleryImgName(url) {
   return decodeURIComponent(url.slice(lastSlash + 1).split("?")[0]);
 }
 
-function _galleryRenderThumbs() {
-  const strip = $("#galleryThumbs");
-  if (!strip) return;
-  strip.style.display = _gallery.thumbs ? "flex" : "none";
-  if (!_gallery.thumbs) return;
-  const { urls, idx } = _gallery;
-  strip.innerHTML = urls.map((u, i) =>
-    `<img src="${u}" loading="lazy" class="${i === idx ? "active" : ""}" data-gthumb="${i}" alt="${i + 1}">`).join("");
-  const act = strip.querySelector(".active");
-  if (act) act.scrollIntoView({ block: "nearest", inline: "center" });
+function _galleryRenderGrid() {
+  const { urls, page } = _gallery;
+  const pages = Math.max(1, Math.ceil(urls.length / _GAL_PER_PAGE));
+  const start = Math.min(page, pages - 1) * _GAL_PER_PAGE;
+  const slice = urls.slice(start, start + _GAL_PER_PAGE);
+  const grid = $("#galleryThumbsGrid");
+  grid.innerHTML = slice.map((u, i) => {
+    const n = start + i;
+    return `<div class="gal-thumb" data-gthumb="${n}" title="${esc(_galleryImgName(u))}">
+      <img src="${u}" loading="lazy" alt="Imagen ${n + 1}">
+      <span class="gal-thumb-idx">${n + 1}</span>
+    </div>`;
+  }).join("");
+  const prevBtn = $("#galPrevPage");
+  const nextBtn = $("#galNextPage");
+  if (prevBtn) prevBtn.disabled = page <= 0;
+  if (nextBtn) nextBtn.disabled = page >= pages - 1;
+  const info = $("#galleryPageInfo");
+  if (info) info.textContent = `${urls.length} imagen(es) · página ${page + 1}/${pages}`;
 }
 
-function _galleryShow() {
+function _galleryShowThumbs() {
+  _gallery.view = "thumbs";
+  const thumbsView = $("#galleryThumbsView");
+  const imgView = $("#galleryImgView");
+  if (thumbsView) thumbsView.style.display = "";
+  if (imgView) imgView.style.display = "none";
+  const back = $("#galleryImgBack");
+  if (back) back.style.visibility = "hidden";
+  $("#galleryTitle").textContent = _gallery.title || "Galería";
+  _galleryRenderGrid();
+}
+
+function _galleryShowImage() {
+  _gallery.view = "image";
+  const thumbsView = $("#galleryThumbsView");
+  const imgView = $("#galleryImgView");
+  if (thumbsView) thumbsView.style.display = "none";
+  if (imgView) imgView.style.display = "flex";
+  const back = $("#galleryImgBack");
+  if (back) back.style.visibility = "visible";
   const { urls, idx } = _gallery;
   const img = $("#galleryImg");
   img.src = urls[idx];
-  $("#galleryTitle").textContent = _galleryImgName(urls[idx]);
-  $("#galleryCounter").textContent = `${idx + 1} / ${urls.length}`;
+  img.alt = `Imagen ${idx + 1} de ${urls.length}`;
+  $("#galleryTitle").textContent = `${_galleryImgName(urls[idx])} · ${idx + 1}/${urls.length}`;
   document.querySelectorAll(".gallery-nav").forEach((b) => {
     b.style.display = urls.length > 1 ? "flex" : "none";
   });
-  document.querySelectorAll(".gallery-toolbar [data-nav]").forEach((b) => {
-    b.disabled = urls.length < 2;
-  });
   _galleryResetView();
-  _galleryRenderThumbs();
   // precarga vecinas
   [idx - 1, idx + 1].forEach((i) => {
     if (i >= 0 && i < urls.length) {
@@ -1144,29 +1176,37 @@ function _galleryShow() {
   });
 }
 
-function openGallery(docId, urls, startIdx) {
+function openGallery(docId, urls, startIdx, title) {
   if (!urls.length) return;
   _gallery = {
-    urls, idx: Math.max(0, Math.min(startIdx, urls.length - 1)),
-    zoom: 1, panX: 0, panY: 0, thumbs: true,
+    urls,
+    idx: Math.max(0, Math.min(startIdx, urls.length - 1)),
+    page: Math.floor(Math.max(0, Math.min(startIdx, urls.length - 1)) / _GAL_PER_PAGE),
+    zoom: 1, panX: 0, panY: 0, view: "thumbs", title: title || "",
   };
   $("#galleryModal").style.display = "flex";
   document.body.style.overflow = "hidden";
-  _galleryShow();
+  _galleryShowThumbs();
 }
 
-function galleryStep(dir) {
-  const { urls, idx } = _gallery;
-  if (urls.length < 2) return;
-  _gallery.idx = (idx + dir + urls.length) % urls.length;
-  _galleryShow();
+function galleryPage(dir) {
+  const pages = Math.max(1, Math.ceil(_gallery.urls.length / _GAL_PER_PAGE));
+  _gallery.page = Math.min(Math.max(0, _gallery.page + dir), pages - 1);
+  _galleryRenderGrid();
 }
 
 function galleryGoto(i) {
   const n = _gallery.urls.length;
   if (!n) return;
   _gallery.idx = i < 0 ? n - 1 : Math.max(0, Math.min(i, n - 1));
-  _galleryShow();
+  _galleryShowImage();
+}
+
+function galleryStep(dir) {
+  const { urls, idx } = _gallery;
+  if (urls.length < 2) return;
+  _gallery.idx = (idx + dir + urls.length) % urls.length;
+  _galleryShowImage();
 }
 
 function galleryZoom(factor) {
@@ -1177,27 +1217,52 @@ function galleryZoom(factor) {
   _galleryApplyView();
 }
 
-function galleryZoomBy(delta) {
-  galleryZoom(delta < 0 ? 1.15 : 1 / 1.15);
-}
-
 function galleryResetZoom() {
   _galleryResetView();
 }
 
-function galleryToggleThumbs() {
-  _gallery.thumbs = !_gallery.thumbs;
-  _galleryRenderThumbs();
+function galleryClose() {
+  if (_gallery.view === "image") _galleryShowThumbs();
+  else closeGallery();
 }
 
-function galleryBackdrop(ev) {
-  if (ev.target.id === "galleryModal" || ev.target.classList.contains("gallery-pan")) closeGallery();
+function galleryShowThumbs() {
+  _galleryShowThumbs();
+}
+
+function _galleryKeydown(ev) {
+  if ($("#galleryModal").style.display === "none") return;
+  if (ev.key === "Escape") {
+    if (_gallery.view === "image") _galleryShowThumbs();
+    else closeGallery();
+    return;
+  }
+  if (_gallery.view === "image") {
+    if (ev.key === "ArrowLeft") galleryStep(-1);
+    else if (ev.key === "ArrowRight") galleryStep(1);
+    else if (ev.key === "+" || ev.key === "=") galleryZoom(1.25);
+    else if (ev.key === "-" || ev.key === "_") galleryZoom(0.8);
+    else if (ev.key === "0") galleryResetZoom();
+    else if (ev.key === "Backspace") _galleryShowThumbs();
+  } else {
+    if (ev.key === "ArrowLeft") galleryPage(-1);
+    else if (ev.key === "ArrowRight") galleryPage(1);
+    else if (ev.key === "Enter") { /* selección por click */ }
+  }
+}
+
+function _galleryWheel(ev) {
+  if ($("#galleryModal").style.display === "none") return;
+  if (_gallery.view !== "image") return;
+  if (ev.ctrlKey || ev.metaKey) return; // zoom de página
+  ev.preventDefault();
+  galleryZoom(ev.deltaY < 0 ? 1.15 : 1 / 1.15);
 }
 
 let _pan = null;
 
 function _galleryPanStart(ev) {
-  if (_gallery.zoom <= 1.001) return;
+  if (_gallery.view !== "image" || _gallery.zoom <= 1.001) return;
   _pan = { x: ev.clientX, y: ev.clientY, px: _gallery.panX, py: _gallery.panY };
   const img = $("#galleryImg");
   img.style.cursor = "grabbing";
@@ -1218,26 +1283,6 @@ function _galleryPanEnd() {
   if (img) img.style.cursor = _gallery.zoom > 1.001 ? "grab" : "";
 }
 
-function _galleryKeydown(ev) {
-  if ($("#galleryModal").style.display === "none") return;
-  if (ev.key === "Escape") { closeGallery(); return; }
-  if (ev.key === "ArrowLeft") { galleryStep(-1); return; }
-  if (ev.key === "ArrowRight") { galleryStep(1); return; }
-  if (ev.key === "Home") { galleryGoto(0); return; }
-  if (ev.key === "End") { galleryGoto(-1); return; }
-  if (ev.key === "+" || ev.key === "=") { galleryZoom(1.25); return; }
-  if (ev.key === "-" || ev.key === "_") { galleryZoom(0.8); return; }
-  if (ev.key === "0") { galleryResetZoom(); return; }
-  if (ev.key === "t" || ev.key === "T") { galleryToggleThumbs(); }
-}
-
-function _galleryWheel(ev) {
-  if ($("#galleryModal").style.display === "none") return;
-  if (ev.ctrlKey || ev.metaKey) return; // zoom de página
-  ev.preventDefault();
-  galleryZoomBy(ev.deltaY);
-}
-
 function closeGallery() {
   $("#galleryModal").style.display = "none";
   document.body.style.overflow = "";
@@ -1246,7 +1291,7 @@ function closeGallery() {
   _pan = null;
 }
 
-async function openFolderGallery(docId, startIdx) {
+async function openFolderGallery(docId, startIdx, title) {
   const list = await folderFiles(docId);
   const urls = (list.files || [])
     .filter((f) => _IMG_EXTS.has(f.ext))
@@ -1255,11 +1300,11 @@ async function openFolderGallery(docId, startIdx) {
     toast("Esta carpeta no contiene imágenes", "yellow");
     return;
   }
-  openGallery(docId, urls, startIdx || 0);
+  openGallery(docId, urls, startIdx || 0, title || _docTitleCache[docId] || "Galería");
 }
 
-function openDocImage(docId) {
-  openGallery(docId, [`/api/documents/${docId}/file`], 0);
+function openDocImage(docId, title) {
+  openGallery(docId, [`/api/documents/${docId}/file`], 0, title || _docTitleCache[docId] || "Imagen");
 }
 
 function openRawDoc(docId) {
@@ -1275,6 +1320,7 @@ async function renderDocuments(d) {
   }
   // resolver listados de carpetas en paralelo
   const items = await Promise.all(docs.map(async (doc) => {
+    _docTitleCache[doc.id] = doc.orig_filename || doc.kind;
     if (doc.kind === "dicom_folder" || doc.kind === "folder") {
       const list = await folderFiles(doc.id);
       const imgs = (list.files || []).filter((f) => _IMG_EXTS.has(f.ext)).slice(0, 4);
@@ -1992,12 +2038,19 @@ document.addEventListener("DOMContentLoaded", () => {
     gPan.addEventListener("mousemove", _galleryPanMove);
     gPan.addEventListener("mouseup", _galleryPanEnd);
     gPan.addEventListener("mouseleave", _galleryPanEnd);
+    gPan.addEventListener("dblclick", () => galleryResetZoom());
   }
-  const gThumbs = document.getElementById("galleryThumbs");
-  if (gThumbs) {
-    gThumbs.addEventListener("click", (ev) => {
+  const gGrid = document.getElementById("galleryThumbsGrid");
+  if (gGrid) {
+    gGrid.addEventListener("click", (ev) => {
       const t = ev.target.closest("[data-gthumb]");
       if (t) galleryGoto(Number(t.dataset.gthumb));
+    });
+  }
+  const gModal = document.getElementById("galleryModal");
+  if (gModal) {
+    gModal.addEventListener("mousedown", (ev) => {
+      if (ev.target === gModal) closeGallery();
     });
   }
 });
