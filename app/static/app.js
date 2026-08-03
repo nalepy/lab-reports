@@ -1084,6 +1084,188 @@ async function folderFiles(docId) {
   }
 }
 
+/* ---------------- galería a pantalla completa ---------------- */
+
+let _gallery = {
+  urls: [], idx: 0, zoom: 1, panX: 0, panY: 0, thumbs: true,
+};
+
+function _galleryApplyView() {
+  const img = $("#galleryImg");
+  const { zoom, panX, panY } = _gallery;
+  img.style.transform = `translate3d(${panX}px, ${panY}px, 0) scale(${zoom})`;
+  img.style.cursor = zoom > 1.001 ? "grab" : "";
+}
+
+function _galleryResetView() {
+  _gallery.zoom = 1;
+  _gallery.panX = 0;
+  _gallery.panY = 0;
+  _galleryApplyView();
+}
+
+function _galleryImgName(url) {
+  const lastSlash = url.lastIndexOf("/");
+  return decodeURIComponent(url.slice(lastSlash + 1).split("?")[0]);
+}
+
+function _galleryRenderThumbs() {
+  const strip = $("#galleryThumbs");
+  if (!strip) return;
+  strip.style.display = _gallery.thumbs ? "flex" : "none";
+  if (!_gallery.thumbs) return;
+  const { urls, idx } = _gallery;
+  strip.innerHTML = urls.map((u, i) =>
+    `<img src="${u}" loading="lazy" class="${i === idx ? "active" : ""}" data-gthumb="${i}" alt="${i + 1}">`).join("");
+  const act = strip.querySelector(".active");
+  if (act) act.scrollIntoView({ block: "nearest", inline: "center" });
+}
+
+function _galleryShow() {
+  const { urls, idx } = _gallery;
+  const img = $("#galleryImg");
+  img.src = urls[idx];
+  $("#galleryTitle").textContent = _galleryImgName(urls[idx]);
+  $("#galleryCounter").textContent = `${idx + 1} / ${urls.length}`;
+  document.querySelectorAll(".gallery-nav").forEach((b) => {
+    b.style.display = urls.length > 1 ? "flex" : "none";
+  });
+  document.querySelectorAll(".gallery-toolbar [data-nav]").forEach((b) => {
+    b.disabled = urls.length < 2;
+  });
+  _galleryResetView();
+  _galleryRenderThumbs();
+  // precarga vecinas
+  [idx - 1, idx + 1].forEach((i) => {
+    if (i >= 0 && i < urls.length) {
+      const pre = new Image();
+      pre.src = urls[i];
+    }
+  });
+}
+
+function openGallery(docId, urls, startIdx) {
+  if (!urls.length) return;
+  _gallery = {
+    urls, idx: Math.max(0, Math.min(startIdx, urls.length - 1)),
+    zoom: 1, panX: 0, panY: 0, thumbs: true,
+  };
+  $("#galleryModal").style.display = "flex";
+  document.body.style.overflow = "hidden";
+  _galleryShow();
+}
+
+function galleryStep(dir) {
+  const { urls, idx } = _gallery;
+  if (urls.length < 2) return;
+  _gallery.idx = (idx + dir + urls.length) % urls.length;
+  _galleryShow();
+}
+
+function galleryGoto(i) {
+  const n = _gallery.urls.length;
+  if (!n) return;
+  _gallery.idx = i < 0 ? n - 1 : Math.max(0, Math.min(i, n - 1));
+  _galleryShow();
+}
+
+function galleryZoom(factor) {
+  const prev = _gallery.zoom;
+  const next = Math.min(10, Math.max(1, prev * factor));
+  if (next === prev) return;
+  _gallery.zoom = next;
+  _galleryApplyView();
+}
+
+function galleryZoomBy(delta) {
+  galleryZoom(delta < 0 ? 1.15 : 1 / 1.15);
+}
+
+function galleryResetZoom() {
+  _galleryResetView();
+}
+
+function galleryToggleThumbs() {
+  _gallery.thumbs = !_gallery.thumbs;
+  _galleryRenderThumbs();
+}
+
+function galleryBackdrop(ev) {
+  if (ev.target.id === "galleryModal" || ev.target.classList.contains("gallery-pan")) closeGallery();
+}
+
+let _pan = null;
+
+function _galleryPanStart(ev) {
+  if (_gallery.zoom <= 1.001) return;
+  _pan = { x: ev.clientX, y: ev.clientY, px: _gallery.panX, py: _gallery.panY };
+  const img = $("#galleryImg");
+  img.style.cursor = "grabbing";
+  ev.preventDefault();
+}
+
+function _galleryPanMove(ev) {
+  if (!_pan) return;
+  _gallery.panX = _pan.px + (ev.clientX - _pan.x);
+  _gallery.panY = _pan.py + (ev.clientY - _pan.y);
+  _galleryApplyView();
+}
+
+function _galleryPanEnd() {
+  if (!_pan) return;
+  _pan = null;
+  const img = $("#galleryImg");
+  if (img) img.style.cursor = _gallery.zoom > 1.001 ? "grab" : "";
+}
+
+function _galleryKeydown(ev) {
+  if ($("#galleryModal").style.display === "none") return;
+  if (ev.key === "Escape") { closeGallery(); return; }
+  if (ev.key === "ArrowLeft") { galleryStep(-1); return; }
+  if (ev.key === "ArrowRight") { galleryStep(1); return; }
+  if (ev.key === "Home") { galleryGoto(0); return; }
+  if (ev.key === "End") { galleryGoto(-1); return; }
+  if (ev.key === "+" || ev.key === "=") { galleryZoom(1.25); return; }
+  if (ev.key === "-" || ev.key === "_") { galleryZoom(0.8); return; }
+  if (ev.key === "0") { galleryResetZoom(); return; }
+  if (ev.key === "t" || ev.key === "T") { galleryToggleThumbs(); }
+}
+
+function _galleryWheel(ev) {
+  if ($("#galleryModal").style.display === "none") return;
+  if (ev.ctrlKey || ev.metaKey) return; // zoom de página
+  ev.preventDefault();
+  galleryZoomBy(ev.deltaY);
+}
+
+function closeGallery() {
+  $("#galleryModal").style.display = "none";
+  document.body.style.overflow = "";
+  $("#galleryImg").src = "";
+  _galleryResetView();
+  _pan = null;
+}
+
+async function openFolderGallery(docId, startIdx) {
+  const list = await folderFiles(docId);
+  const urls = (list.files || [])
+    .filter((f) => _IMG_EXTS.has(f.ext))
+    .map((f) => `/api/documents/${docId}/file/${encodeURIComponent(f.path)}`);
+  if (!urls.length) {
+    toast("Esta carpeta no contiene imágenes", "yellow");
+    return;
+  }
+  openGallery(docId, urls, startIdx || 0);
+}
+
+function openDocImage(docId) {
+  openGallery(docId, [`/api/documents/${docId}/file`], 0);
+}
+
+function openRawDoc(docId) {
+  window.open(`/api/documents/${docId}/file`, "_blank", "noopener");
+}
+
 async function renderDocuments(d) {
   // ocultar PDFs que ya están en el historial (no duplicar)
   const docs = (d.documents || []).filter(
@@ -1095,21 +1277,25 @@ async function renderDocuments(d) {
   const items = await Promise.all(docs.map(async (doc) => {
     if (doc.kind === "dicom_folder" || doc.kind === "folder") {
       const list = await folderFiles(doc.id);
-      const imgs = (list.files || []).filter((f) => [".png", ".jpg", ".jpeg", ".gif", ".webp", ".bmp", ".tif", ".tiff"].includes(f.ext)).slice(0, 4);
+      const imgs = (list.files || []).filter((f) => _IMG_EXTS.has(f.ext)).slice(0, 4);
       const dcmCount = (list.files || []).filter((f) => f.ext === ".dcm" || f.ext === ".dicom").length;
       const thumbnails = imgs.map((f) =>
-        `<img src="/api/documents/${doc.id}/file/${encodeURIComponent(f.path)}" alt="${esc(f.path)}" loading="lazy">`).join("");
-      const fileList = (list.files || []).slice(0, 8).map((f) =>
-        `<li><a href="/api/documents/${doc.id}/file/${encodeURIComponent(f.path)}" target="_blank" rel="noopener">${esc(f.path)}</a> <span style="color:#999">(${Math.max(1, Math.round(f.size / 1024))} KB)</span></li>`).join("");
-      const more = (list.files || []).length > 8 ? `<li style="color:#999">… ${(list.files || []).length - 8} más</li>` : "";
+        `<img src="/api/documents/${doc.id}/file/${encodeURIComponent(f.path)}" alt="${esc(f.path)}" loading="lazy" onclick="openFolderGallery(${doc.id})" title="Abrir galería">`).join("");
+      const fileList = (list.files || []).filter((f) => _IMG_EXTS.has(f.ext)).slice(0, 8).map((f) =>
+        `<li><a href="#" onclick="openFolderGallery(${doc.id});return false;" title="Abrir en la galería">🖼️ ${esc(f.path)}</a> <span style="color:#999">(${Math.max(1, Math.round(f.size / 1024))} KB)</span></li>`).join("");
+      const nonImg = (list.files || []).filter((f) => !_IMG_EXTS.has(f.ext)).slice(0, 8).map((f) =>
+        `<li><a href="/api/documents/${doc.id}/file/${encodeURIComponent(f.path)}" target="_blank" rel="noopener" download>📄 ${esc(f.path)}</a> <span style="color:#999">(${Math.max(1, Math.round(f.size / 1024))} KB)</span></li>`).join("");
+      const moreImgs = (list.files || []).filter((f) => _IMG_EXTS.has(f.ext)).length > 8 ? `<li style="color:#999">… ${(list.files || []).filter((f) => _IMG_EXTS.has(f.ext)).length - 8} imágenes más en la galería</li>` : "";
+      const imgCount = (list.files || []).filter((f) => _IMG_EXTS.has(f.ext)).length;
       return {
         ...doc,
-        folderList: `<div class="doc-thumb thumb-multi">${thumbnails || `<span class="doc-icon">📁</span>`}</div>
+        folderList: `<div class="doc-thumb thumb-multi" onclick="openFolderGallery(${doc.id})" title="Abrir galería (${imgCount} imágenes)">${thumbnails || `<span class="doc-icon">📁</span>`}</div>
           <div class="doc-meta">
             <div class="doc-name">📁 ${esc(doc.orig_filename)}</div>
-            <div class="doc-sub">${dcmCount ? dcmCount + " DICOM · " : ""}${(list.files || []).length} archivo(s)</div>
-            ${fileList ? `<ul class="doc-filelist">${fileList}${more}</ul>` : ""}
+            <div class="doc-sub">${dcmCount ? dcmCount + " DICOM · " : ""}${(list.files || []).length} archivo(s) · ${imgCount} imagen(es)</div>
+            ${fileList || nonImg ? `<ul class="doc-filelist">${fileList}${nonImg}${moreImgs}</ul>` : ""}
             <div class="doc-actions">
+              <a href="#" onclick="openFolderGallery(${doc.id});return false;" title="Ver todas las imágenes">🖼️ Ver galería</a>
               <a href="/api/documents/${doc.id}/zip" title="Descargar todo (ZIP, formatos originales)">⬇️ ZIP</a>
               <button onclick="deleteDocument(${doc.id})" title="Eliminar">🗑</button>
             </div>
@@ -1121,13 +1307,13 @@ async function renderDocuments(d) {
     const icon = doc.kind === "image" ? "🖼️" : doc.kind === "pdf" ? "📄" : doc.kind === "dicom" || doc.kind === "dicom_zip" ? "🩻" : "📎";
     return {
       ...doc,
-      folderList: `${isImage ? `<div class="doc-thumb"><img src="/api/documents/${doc.id}/file" alt="${esc(doc.orig_filename)}" loading="lazy"></div>` : ""}
+      folderList: `${isImage ? `<div class="doc-thumb"><img src="/api/documents/${doc.id}/file" alt="${esc(doc.orig_filename)}" loading="lazy" onclick="openDocImage(${doc.id})" title="Ver imagen"></div>` : ""}
         <div class="doc-meta">
           <div class="doc-name" title="${esc(doc.orig_filename)}">${icon} ${esc(doc.orig_filename)}</div>
           <div class="doc-sub">${esc(doc.notes || doc.kind)}${sizeKb ? " · " + sizeKb : ""} · ${fmtDate(doc.uploaded_at)}</div>
           ${doc.study_date ? `<div class="doc-study-date">📅 Fecha estudio: <b>${fmtDMY(doc.study_date)}</b></div>` : ""}
           <div class="doc-actions">
-            <a href="/api/documents/${doc.id}/file" target="_blank" rel="noopener">${isImage ? "Ver / abrir" : "Descargar"}</a>
+            <a href="#" onclick="${isImage ? `openDocImage(${doc.id})` : `openRawDoc(${doc.id})`};return false;">${isImage ? "🖼️ Ver" : "Descargar"}</a>
             <button onclick="deleteDocument(${doc.id})" title="Eliminar">🗑</button>
           </div>
         </div>`,
@@ -1310,6 +1496,8 @@ const _SAFE_DOC_EXT = new Set([
   ".jpg", ".jpeg", ".png", ".gif", ".webp", ".bmp", ".tif", ".tiff",
   ".dcm", ".dicom"
 ]);
+
+const _IMG_EXTS = new Set([".png", ".jpg", ".jpeg", ".gif", ".webp", ".bmp", ".tif", ".tiff"]);
 
 // Diferencia relativa media entre dos firmas perceptuales [0..1].
 // 0 = idénticas; ~0.5 = muy distintas.
@@ -1796,4 +1984,20 @@ document.addEventListener("DOMContentLoaded", () => {
   loadPersons();
   ensureAIRepos();
   setInterval(pollAIJobs, 15000);
+  document.addEventListener("keydown", _galleryKeydown);
+  document.addEventListener("wheel", _galleryWheel, { passive: false });
+  const gPan = document.getElementById("galleryPan");
+  if (gPan) {
+    gPan.addEventListener("mousedown", _galleryPanStart);
+    gPan.addEventListener("mousemove", _galleryPanMove);
+    gPan.addEventListener("mouseup", _galleryPanEnd);
+    gPan.addEventListener("mouseleave", _galleryPanEnd);
+  }
+  const gThumbs = document.getElementById("galleryThumbs");
+  if (gThumbs) {
+    gThumbs.addEventListener("click", (ev) => {
+      const t = ev.target.closest("[data-gthumb]");
+      if (t) galleryGoto(Number(t.dataset.gthumb));
+    });
+  }
 });

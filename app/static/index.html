@@ -98,6 +98,33 @@
 </div>
 
 <div id="toast" class="toast"></div>
+<div id="galleryModal" class="gallery-overlay" style="display:none" onclick="galleryBackdrop(event)">
+  <button class="gallery-close" onclick="closeGallery()" title="Cerrar (Esc)" aria-label="Cerrar">✕</button>
+  <button class="gallery-nav gallery-prev" onclick="galleryStep(-1)" title="Anterior (←)" aria-label="Anterior">‹</button>
+  <button class="gallery-nav gallery-next" onclick="galleryStep(1)" title="Siguiente (→)" aria-label="Siguiente">›</button>
+  <div class="gallery-stage">
+    <div class="gallery-header">
+      <div id="galleryTitle" class="gallery-title"></div>
+    </div>
+    <div class="gallery-pan" id="galleryPan">
+      <img id="galleryImg" alt="Imagen de estudio" draggable="false">
+    </div>
+    <div class="gallery-toolbar">
+      <button data-nav onclick="galleryGoto(0)" title="Primera (Inicio)" aria-label="Primera">⏮</button>
+      <button data-nav onclick="galleryStep(-1)" title="Anterior (←)" aria-label="Anterior">‹</button>
+      <span class="gallery-count" id="galleryCounter"></span>
+      <button data-nav onclick="galleryStep(1)" title="Siguiente (→)" aria-label="Siguiente">›</button>
+      <button data-nav onclick="galleryGoto(-1)" title="Última (Fin)" aria-label="Última">⏭</button>
+      <span class="gallery-sep"></span>
+      <button onclick="galleryZoom(1.25)" title="Acercar (+, rueda del ratón)" aria-label="Acercar">＋</button>
+      <button onclick="galleryZoom(0.8)" title="Alejar (−, rueda del ratón)" aria-label="Alejar">－</button>
+      <button onclick="galleryResetZoom()" title="Restablecer zoom (0)" aria-label="Restablecer">1:1</button>
+      <span class="gallery-sep"></span>
+      <button id="galleryThumbsBtn" onclick="galleryToggleThumbs()" title="Mostrar/ocultar miniaturas" aria-label="Miniaturas">▦</button>
+    </div>
+    <div class="gallery-thumbs" id="galleryThumbs"></div>
+  </div>
+</div>
 <div class="settings-panel" id="settingsPanel" style="display:none">
   <div class="settings-card">
     <h3>⚙️ Configuración</h3>
@@ -113,6 +140,6 @@
   </div>
 </div>
 
-<script src="/static/app.js?v=20260805e"></script>
+<script src="/static/app.js?v=20260805f"></script>
 </body>
 </html>
