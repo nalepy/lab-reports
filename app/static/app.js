@@ -1236,6 +1236,130 @@ function _startUpload() {
   uploadBatch();
 }
 
+/* --- almacenamiento temporal privado (OPFS) + empaquetado ZIP local --- */
+
+async function _opfsWrite(dir, relPath, blob) {
+  const parts = relPath.replace(/\\/g, "/").split("/").filter(p => p && p !== "." && p !== "..");
+  const name = parts.pop();
+  let d = dir;
+  for (const p of parts) d = await d.getDirectoryHandle(p, { create: true });
+  const fh = await d.getFileHandle(name, { create: true });
+  const w = await fh.createWritable();
+  await w.write(blob);
+  await w.close();
+}
+
+async function _purgeDir(dir) {
+  for await (const [name, h] of dir.entries()) {
+    try {
+      if (h.kind === "directory") { await _purgeDir(h); await dir.removeEntry(name); }
+      else await dir.removeEntry(name);
+    } catch (e) { /* ignorar */ }
+  }
+}
+
+async function _listDir(dir, prefix) {
+  const out = [];
+  for await (const [name, h] of dir.entries()) {
+    const rel = prefix ? `${prefix}/${name}` : name;
+    if (h.kind === "directory") {
+      out.push(...await _listDir(h, rel));
+    } else {
+      out.push({ name: rel, handle: h });
+    }
+  }
+  return out;
+}
+
+const _crcTable = (() => {
+  const t = new Uint32Array(256);
+  for (let n = 0; n < 256; n++) {
+    let c = n;
+    for (let k = 0; k < 8; k++) c = (c & 1) ? (0xEDB88320 ^ (c >>> 1)) : (c >>> 1);
+    t[n] = c;
+  }
+  return t;
+})();
+
+function _crc32(data) {
+  let c = 0xFFFFFFFF;
+  const t = _crcTable;
+  for (let i = 0; i < data.length; i++) c = t[(c ^ data[i]) & 0xFF] ^ (c >>> 8);
+  return (c ^ 0xFFFFFFFF) >>> 0;
+}
+
+function _dosDateTime(d) {
+  const time = ((d.getHours() << 11) | (d.getMinutes() << 5) | (d.getSeconds() >> 1)) & 0xFFFF;
+  const date = (((d.getFullYear() - 1980) << 9) | ((d.getMonth() + 1) << 5) | d.getDate()) & 0xFFFF;
+  return { time, date };
+}
+
+async function _streamZip(outHandle, entries) {
+  // ZIP sin compresión (los JPG/WebM ya vienen comprimidos); un archivo a la vez.
+  const w = await outHandle.createWritable();
+  const now = _dosDateTime(new Date());
+  const central = [];
+  let offset = 0;
+  for (const e of entries) {
+    const data = new Uint8Array(await (await e.handle.getFile()).arrayBuffer());
+    const nameBytes = new TextEncoder().encode(e.name);
+    const crc = _crc32(data);
+    const lh = new DataView(new ArrayBuffer(30));
+    lh.setUint32(0, 0x04034b50, true);      // local file header
+    lh.setUint16(4, 20, true);              // version needed
+    lh.setUint16(6, 0x0800, true);          // flag UTF-8
+    lh.setUint16(8, 0, true);               // método: store
+    lh.setUint16(10, now.time, true);
+    lh.setUint16(12, now.date, true);
+    lh.setUint32(14, crc, true);
+    lh.setUint32(18, data.length, true);
+    lh.setUint32(22, data.length, true);
+    lh.setUint16(26, nameBytes.length, true);
+    lh.setUint16(28, 0, true);              // extra len
+    await w.write(lh.buffer);
+    await w.write(nameBytes);
+    await w.write(data);
+    central.push({ nameBytes, crc, size: data.length, offset });
+    offset += 30 + nameBytes.length + data.length;
+  }
+  let centralSize = 0;
+  const centralStart = offset;
+  for (const c of central) {
+    const ch = new DataView(new ArrayBuffer(46));
+    ch.setUint32(0, 0x02014b50, true);      // central directory
+    ch.setUint16(4, 20, true);              // version made by
+    ch.setUint16(6, 20, true);              // version needed
+    ch.setUint16(8, 0x0800, true);
+    ch.setUint16(10, 0, true);
+    ch.setUint16(12, now.time, true);
+    ch.setUint16(14, now.date, true);
+    ch.setUint32(16, c.crc, true);
+    ch.setUint32(20, c.size, true);
+    ch.setUint32(24, c.size, true);
+    ch.setUint16(28, c.nameBytes.length, true);
+    ch.setUint16(30, 0, true);
+    ch.setUint16(32, 0, true);
+    ch.setUint16(34, 0, true);
+    ch.setUint16(36, 0, true);
+    ch.setUint32(38, 0, true);
+    ch.setUint32(42, c.offset, true);
+    await w.write(ch.buffer);
+    await w.write(c.nameBytes);
+    centralSize += 46 + c.nameBytes.length;
+  }
+  const eocd = new DataView(new ArrayBuffer(22));
+  eocd.setUint32(0, 0x06054b50, true);     // end of central directory
+  eocd.setUint16(4, 0, true);
+  eocd.setUint16(6, 0, true);
+  eocd.setUint16(8, central.length, true);
+  eocd.setUint16(10, central.length, true);
+  eocd.setUint32(12, centralSize, true);
+  eocd.setUint32(16, centralStart, true);
+  eocd.setUint16(20, 0, true);
+  await w.write(eocd.buffer);
+  await w.close();
+}
+
 async function uploadBatch() {
   const box = $("#uploadResult");
   const list = $("#uploadFileList");
@@ -1244,31 +1368,51 @@ async function uploadBatch() {
   const totalN = files.length;
 
   // --- PASO 1: confirmar conversión (sin depender de extensión) ---
-  if (totalN > 200 && !confirm(`${totalN} archivo(s). Se va a escanear cada archivo para detectar y convertir DICOM a JPG.\n¿Continuar?\n\n• Los DICOM que no se puedan convertir se omiten (nunca se suben en formato original).\n• Si la subida falla, comprima la carpeta en ZIP y arrastre el ZIP.`)) {
+  if (totalN > 200 && !confirm(`${totalN} archivo(s). Se va a escanear cada archivo para detectar y convertir DICOM a JPG.\n¿Continuar?\n\n• Los DICOM que no se puedan convertir se omiten (nunca se suben en formato original).\n• Cada archivo se guarda temporalmente y se sube empaquetado en ZIP (el servidor lo descomprime).`)) {
     _pendingUpload = []; list.innerHTML = "";
-    box.innerHTML = `<div class="drug-warning sev-border-yellow"><div class="d-title">Cancelado</div><div>Comprima la carpeta en ZIP y arrastre el ZIP.</div></div>`;
+    box.innerHTML = `<div class="drug-warning sev-border-yellow"><div class="d-title">Cancelado</div><div>No se subió nada.</div></div>`;
     return;
   }
 
-  // --- PASO 2: escanear y convertir cualquier DICOM encontrado ---
+  // soporte de almacenamiento temporal privado del navegador
+  if (!navigator.storage || !navigator.storage.getDirectory) {
+    _pendingUpload = []; list.innerHTML = "";
+    box.innerHTML = `<div class="drug-warning sev-border-red"><div class="d-title">Navegador no compatible</div><div>Este navegador no soporta el almacenamiento temporal local. Use Chrome o Edge actualizado.</div></div>`;
+    return;
+  }
+
+  // --- PASO 2: convertir y GUARDAR cada archivo a temp (libera RAM) ---
   _uploadBusy = true;
-  const fd = new FormData();
+  const rootDir = await navigator.storage.getDirectory();
+  const tmpName = `lab_up_${Date.now()}`;
+  let tmpDir;
+  try {
+    tmpDir = await rootDir.getDirectoryHandle(tmpName, { create: true });
+  } catch (e) {
+    _uploadBusy = false;
+    box.innerHTML = `<div class="drug-warning sev-border-red"><div class="d-title">Error</div><div>No se pudo crear la carpeta temporal: ${esc(e.message || e)}</div></div>`;
+    return;
+  }
   let converted = 0;
   let passthrough = 0;
   let skipped = 0;
   let done = 0;
-  box.innerHTML = `<p style="color:var(--muted)">⏳ Escaneando y convirtiendo archivos… 0/${totalN}</p>`;
+  box.innerHTML = `<p style="color:var(--muted)">⏳ Escaneando, convirtiendo y guardando… 0/${totalN}</p>`;
   for (const f of files) {
     try {
       const res = await window.DicomConverter.convert(f, { quality: 0.92 });
       if (res && (res.kind === "image" || res.kind === "video")) {
         const ext = res.kind === "image" ? "jpg" : "webm";
-        const base = (f.webkitRelativePath || f.name).replace(/\.[^.]+$/, "");
-        fd.append("files", res.blob, `${base}.${ext}`);
+        const rel = f.webkitRelativePath || f.name;
+        const slash = rel.lastIndexOf("/");
+        const dirPart = slash >= 0 ? rel.slice(0, slash + 1) : "";
+        const namePart = slash >= 0 ? rel.slice(slash + 1) : rel;
+        const base = namePart.replace(/\.[^.]+$/, "") || namePart;
+        await _opfsWrite(tmpDir, dirPart + base + "." + ext, res.blob);
         converted++;
       } else if (res && res.kind === "unparsed" && res.dicom === false) {
-        // no es DICOM → se pasa el original
-        fd.append("files", f, f.webkitRelativePath || f.name);
+        // no es DICOM → se guarda el original
+        await _opfsWrite(tmpDir, f.webkitRelativePath || f.name, f);
         passthrough++;
       } else {
         // DICOM que no se pudo convertir → se omite (nunca se sube raw)
@@ -1289,11 +1433,15 @@ async function uploadBatch() {
   _pendingUpload = [];
   list.innerHTML = "";
 
-  // --- PASO 3: confirmar subida con tamaño real ---
-  const uploadBytes = [...fd].reduce((s, pair) => s + (pair[1].size || 0), 0);
+  // --- PASO 3: listar lo guardado y confirmar tamaño real ---
+  const savedEntries = await _listDir(tmpDir, "");
+  const totalUpload = savedEntries.length;
+  let uploadBytes = 0;
+  for (const e of savedEntries) uploadBytes += (await e.handle.getFile()).size;
   const uploadMb = (uploadBytes / 1048576).toFixed(1);
-  const totalUpload = fd.getAll("files").length;
   if (totalUpload === 0) {
+    await _purgeDir(tmpDir).catch(() => {});
+    try { await rootDir.removeEntry(tmpName); } catch (e) { /* noop */ }
     box.innerHTML = `<div class="drug-warning sev-border-yellow"><div class="d-title">Nada que subir</div><div>Todos los archivos fallaron en la conversión.</div></div>`;
     _uploadBusy = false;
     return;
@@ -1302,79 +1450,93 @@ async function uploadBatch() {
   if (converted) summary += ` · ${converted} DICOM convertidos a JPG`;
   if (passthrough) summary += ` · ${passthrough} no-DICOM pasados`;
   if (skipped) summary += ` · ${skipped} DICOM omitidos`;
-  if (totalUpload > 200 && !confirm(`¿Subir ${summary}?\n\n• Los DICOM que no pudieron convertirse se omiten (no se suben en formato original).\n\n¿Subir ahora?`)) {
-    box.innerHTML = `<div class="drug-warning sev-border-yellow"><div class="d-title">Cancelado</div><div>Puede comprimir la carpeta en ZIP y arrastrar el ZIP.</div></div>`;
+  if (totalUpload > 200 && !confirm(`¿Subir ${summary}?\n\n• Se empaqueta en ZIP(s) de ≤90 MB y el servidor los descomprime.\n\n¿Subir ahora?`)) {
+    await _purgeDir(tmpDir).catch(() => {});
+    try { await rootDir.removeEntry(tmpName); } catch (e) { /* noop */ }
+    box.innerHTML = `<div class="drug-warning sev-border-yellow"><div class="d-title">Cancelado</div><div>Se eliminó la carpeta temporal.</div></div>`;
     _uploadBusy = false;
     return;
   }
 
-  // --- PASO 4: subir ---
-  box.innerHTML = `<p style="color:var(--muted)">⏳ Subiendo ${summary}…</p>`;
-  const timeoutSec = Math.min(600, Math.max(180, totalUpload * 3, Math.round(uploadBytes / 1048576) * 5));
-  const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), timeoutSec * 1000);
+  // --- PASO 4: empaquetar en ZIP(s) y subir (el servidor descomprime) ---
+  const MAX_ZIP = 90 * 1048576; // 90 MB por ZIP
+  const chunks = [];
+  let cur = [];
+  let curBytes = 0;
+  for (const e of savedEntries) {
+    const size = (await e.handle.getFile()).size;
+    if (cur.length && curBytes + size > MAX_ZIP) { chunks.push(cur); cur = []; curBytes = 0; }
+    cur.push(e);
+    curBytes += size;
+  }
+  if (cur.length) chunks.push(cur);
+
+  let totalUploaded = 0;
+  const rows = [];
   try {
-    const res = await fetch(`/api/person/${state.current}/upload-batch`, {
-      method: "POST", body: fd, signal: controller.signal,
-    });
-    clearTimeout(timeoutId);
-    const data = await res.json();
-    if (!res.ok || data.error) {
-      box.innerHTML = `<div class="drug-warning sev-border-red"><div class="d-title">Error del servidor</div><div>${esc(data.error || `HTTP ${res.status}`)}. Intente comprimir la carpeta en ZIP.</div></div>`;
-      return;
-    }
-    let movedCreated = null;
-    const rows = (data.results || []).map((r) => {
-      if (r.status === "moved") {
-        if (r.created) movedCreated = r.to_pid;
-        return `<div class="up-result" style="color:var(--amber);font-weight:650">
-          🔀 <b>${esc(r.file)}</b> — ${esc(r.message || "movido")}</div>`;
+    for (let i = 0; i < chunks.length; i++) {
+      const zipName = chunks.length > 1 ? `estudio_${tmpName}_parte${i + 1}.zip` : `estudio_${tmpName}.zip`;
+      box.innerHTML = `<p style="color:var(--muted)">⏳ Empaquetando y subiendo ZIP ${i + 1}/${chunks.length}…</p>`;
+      const zipHandle = await tmpDir.getFileHandle(zipName, { create: true });
+      await _streamZip(zipHandle, chunks[i]);
+      const zipFile = await zipHandle.getFile();
+      const timeoutSec = Math.min(900, Math.max(300, Math.round(zipFile.size / 1048576) * 10));
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), timeoutSec * 1000);
+      let res;
+      try {
+        res = await fetch(`/api/person/${state.current}/upload-folder`, {
+          method: "POST",
+          body: (() => { const fd = new FormData(); fd.append("files", zipFile, zipName); return fd; })(),
+          signal: controller.signal,
+        });
+      } finally {
+        clearTimeout(timeoutId);
       }
-      const icon = r.ok ? (r.status === "duplicate" ? "🟡" : "✅") : "❌";
-      return `<div class="up-result ${r.ok ? "" : "up-err"}">${icon} <b>${esc(r.file)}</b> — ${esc(r.message || r.status)}</div>`;
-    }).join("");
-    const s = data.summary || {};
-    const note = (s.uploaded > 0)
-      ? `<div class="drug-warning sev-border-yellow" style="margin-top:10px">
-           <div class="d-title">🆕 ${esc(s.uploaded)} archivo(s) nuevo(s) subido(s)${s.new_reports ? ` · ${esc(s.new_reports)} informe(s) de laboratorio` : ""}</div>
-           <div>⚠️ Considere <strong>regenerar el informe IA</strong> para que incluya la información nueva.</div>
-         </div>`
-      : "";
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok || data.error) {
+        rows.push({ ok: false, file: zipName, message: data.error || `HTTP ${res.status}` });
+        continue;
+      }
+      const n = data.files || 0;
+      totalUploaded += n;
+      rows.push({ ok: true, file: zipName, message: data.message || `${n} archivos`, n });
+    }
+
+    // --- PASO 5: purgar carpeta temporal local ---
+    await _purgeDir(tmpDir).catch(() => {});
+    try { await rootDir.removeEntry(tmpName); } catch (e) { /* noop */ }
+
     const convNote = converted
       ? `<div class="up-result">🖼️ ${converted} DICOM convertido(s) a ${converted > 1 ? "imágenes/video" : "imagen/video"}</div>`
       : "";
-    const summaryHtml = `<div class="drug-warning sev-border-green"><div class="d-title">✅ Subida completa: ${s.uploaded || 0} archivo(s)</div></div>${convNote}${rows}${note}`;
+    const zipRows = rows.map((r) =>
+      r.ok
+        ? `<div class="up-result">✅ <b>${esc(r.file)}</b> — ${esc(r.message)}</div>`
+        : `<div class="up-result up-err">❌ <b>${esc(r.file)}</b> — ${esc(r.message)}</div>`
+    ).join("");
+    const note = (totalUploaded > 0)
+      ? `<div class="drug-warning sev-border-yellow" style="margin-top:10px">
+           <div class="d-title">🆕 ${esc(totalUploaded)} archivo(s) subido(s)</div>
+           <div>⚠️ Considere <strong>regenerar el informe IA</strong> para que incluya la información nueva.</div>
+         </div>`
+      : "";
+    const summaryHtml = `<div class="drug-warning sev-border-green"><div class="d-title">✅ Subida completa: ${esc(totalUploaded)} archivo(s)</div></div>${convNote}${zipRows}${note}`;
     box.innerHTML = summaryHtml;
-    toast(s.uploaded > 0 ? "Subida completa — ⚠️ considere regenerar el informe IA" : "Subida completa (nada nuevo)", s.uploaded > 0 ? "yellow" : "green");
+    toast(totalUploaded > 0 ? "Subida completa — ⚠️ considere regenerar el informe IA" : "Subida completa (nada nuevo)", totalUploaded > 0 ? "yellow" : "green");
     state.detail = await api(`/api/person/${state.current}`);
     await loadPersons();
     renderPerson();
-    const problems = (data.results || []).filter((r) => !r.ok || r.status === "duplicate" || r.status === "moved");
-    const fresh = $("#uploadResult");
-    if (fresh) {
-      fresh.innerHTML = problems.length
-        ? `<div class="drug-warning sev-border-yellow"><div class="d-title">⚠️ No agregados a la lista de abajo</div>${problems.map((r) => `<div class="up-result">${esc(r.file)} — ${esc(r.message || r.status)}</div>`).join("")}</div>`
-        : "";
-    }
-    if (movedCreated) {
-      toast("Se creó un paciente nuevo por el nombre del informe", "yellow");
-      selectPerson(movedCreated);
-    }
-    const pending = (data.results || []).filter((r) => r.status === "pending");
-    if (pending.length) {
-      _pendingQueue = pending.flatMap((r) => r.pending || []);
-      _showNextPending();
-    }
     ensureAIRepos();
   } catch (e) {
-    clearTimeout(timeoutId);
+    await _purgeDir(tmpDir).catch(() => {});
+    try { await rootDir.removeEntry(tmpName); } catch (e2) { /* noop */ }
     if (e.name === "AbortError") {
       box.innerHTML = `<div class="drug-warning sev-border-red"><div class="d-title">⏱ Tiempo de espera agotado</div>
-        <div>La subida tardó demasiado (más de ${timeoutSec}s). Con ${totalUpload} archivos (≈ ${uploadMb} MB) puede demorar.<br>
-        • Pruebe <b>comprimir la carpeta en ZIP</b> y subir el ZIP directamente.</div></div>`;
+        <div>La subida del ZIP tardó demasiado. Vuelva a intentarlo (reanuda por partes).</div></div>`;
     } else {
       box.innerHTML = `<div class="drug-warning sev-border-red"><div class="d-title">Error de conexión</div>
-        <div>${esc(e.message || "Error desconocido")}. Intente comprimir la carpeta en ZIP y subir el ZIP.</div></div>`;
+        <div>${esc(e.message || "Error desconocido")}. Se eliminó la carpeta temporal.</div></div>`;
     }
   } finally {
     _uploadBusy = false;
