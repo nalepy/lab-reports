@@ -1243,27 +1243,45 @@ async function uploadBatch() {
   const list = $("#uploadFileList");
   const files = _pendingUpload;
   if (!files.length) { toast("Seleccione o arrastre archivos/carpetas", "yellow"); return; }
-  // para lotes grandes, sugerir ZIP antes de empezar
-  if (files.length > 200) {
-    const nDcm = files.filter((f) => /\.(dcm|dicom)$/i.test(f.name || "")).length;
-    if (!confirm(`${files.length} archivo(s) (${nDcm} DICOM). Son muchos archivos individuales — puede fallar por límites del navegador.\n\n¿Prefiere comprimir la carpeta en ZIP y subir el ZIP en vez? El servidor lo descomprime automáticamente.\n\n• "Aceptar" = continuar con los ${files.length} archivos (riesgo de fallo)\n• "Cancelar" = no subir nada, comprima la carpeta primero`)) {
-      _uploadBusy = false;
-      box.innerHTML = `<div class="drug-warning sev-border-yellow"><div class="d-title">💡 Subida cancelada</div><div>Comprima la carpeta en ZIP y arrastre el ZIP aquí. El servidor extrae los DICOM automáticamente.</div></div>`;
+  const totalN = files.length;
+  const nDcm = files.filter((f) => /\.(dcm|dicom)$/i.test(f.name || "")).length;
+  const canConvert = !!(window.DicomConverter &&
+    (!document.getElementById("uploadConvertDicom") || document.getElementById("uploadConvertDicom").checked));
+
+  // --- PASO 1: confirmar conversión ---
+  if (nDcm && canConvert) {
+    const hint = totalN > 200
+      ? `\n\n⚠️ Son muchos archivos (${totalN}). Si la subida falla, comprima la carpeta en ZIP y arrastre el ZIP en vez.`
+      : "";
+    if (!confirm(`Se van a convertir ${nDcm} archivo(s) DICOM a imágenes JPG/WebM antes de subir (más liviano).\nTotal: ${totalN} archivo(s).${hint}\n\n¿Continuar?`)) {
+      _pendingUpload = [];
+      list.innerHTML = "";
+      box.innerHTML = `<div class="drug-warning sev-border-yellow"><div class="d-title">Cancelado</div><div>Puede comprimir la carpeta en ZIP y arrastrar el ZIP.</div></div>`;
+      return;
+    }
+  } else if (totalN > 200) {
+    if (!confirm(`${totalN} archivo(s) — puede fallar por límites del navegador.\n\n¿Prefiere comprimir la carpeta en ZIP y subir el ZIP? El servidor lo descomprime automáticamente.\n• Aceptar = subir así\n• Cancelar = comprima la carpeta primero`)) {
+      _pendingUpload = [];
+      list.innerHTML = "";
+      box.innerHTML = `<div class="drug-warning sev-border-yellow"><div class="d-title">Cancelado</div><div>Comprima la carpeta en ZIP y arrastre el ZIP aquí.</div></div>`;
       return;
     }
   }
+
+  // --- PASO 2: convertir DICOMs ---
   _uploadBusy = true;
-  const convertDcm = window.DicomConverter &&
-    (!document.getElementById("uploadConvertDicom") || document.getElementById("uploadConvertDicom").checked);
   const fd = new FormData();
-  const totalN = files.length;
   let converted = 0;
+  let failedConv = 0;
   let done = 0;
-  const nDcm = files.filter((f) => /\.(dcm|dicom)$/i.test(f.name || "")).length;
-  box.innerHTML = `<p style="color:var(--muted)">⏳ Procesando archivos… ${done}/${totalN}</p>`;
-  for (const f of files) {
-    const isDcm = /\.(dcm|dicom)$/i.test(f.name || "");
-    if (isDcm && convertDcm) {
+  if (nDcm && canConvert) {
+    box.innerHTML = `<p style="color:var(--muted)">⏳ Convirtiendo DICOM a imágenes… 0/${nDcm}</p>`;
+    for (const f of files) {
+      if (!/\.(dcm|dicom)$/i.test(f.name || "")) {
+        fd.append("files", f, f.webkitRelativePath || f.name);
+        done++;
+        continue;
+      }
       try {
         const res = await window.DicomConverter.convert(f, { quality: 0.92 });
         if (res && (res.kind === "image" || res.kind === "video")) {
@@ -1271,28 +1289,55 @@ async function uploadBatch() {
           const base = (f.webkitRelativePath || f.name).replace(/\.(dcm|dicom)$/i, "");
           fd.append("files", res.blob, `${base}.${ext}`);
           converted++;
-          done++;
-          if (done % 50 === 0 || done === totalN) {
-            box.innerHTML = `<p style="color:var(--muted)">⏳ Convirtiendo DICOM a imágenes… ${done}/${totalN} (${converted} convertidos)</p>`;
-          }
-          continue;
+        } else {
+          // conversión sin resultado → no subir (el original es muy grande)
+          failedConv++;
         }
-      } catch (e) { /* conversión falló: subir DICOM original */ }
+      } catch (e) {
+        failedConv++;
+      }
+      done++;
+      if (done % 25 === 0 || done === nDcm) {
+        box.innerHTML = `<p style="color:var(--muted)">⏳ Convirtiendo DICOM… ${done}/${nDcm} (${converted} ok, ${failedConv} errores)</p>`;
+      }
     }
-    fd.append("files", f, f.webkitRelativePath || f.name);
-    done++;
-    if (done % 100 === 0 || done === totalN) {
-      box.innerHTML = `<p style="color:var(--muted)">⏳ Preparando archivos… ${done}/${totalN}</p>`;
+  } else {
+    // sin conversión: pasar todos los archivos tal cual
+    for (const f of files) {
+      fd.append("files", f, f.webkitRelativePath || f.name);
     }
   }
   _pendingUpload = [];
   list.innerHTML = "";
-  // estimar tamaño comprimido (DICOM→JPG ≈ 15%, otros ≈ 100%)
+  if (!converted && failedConv > 0 && nDcm > 0) {
+    box.innerHTML = `<div class="drug-warning sev-border-red"><div class="d-title">Error de conversión</div>
+      <div>No se pudo convertir ningún DICOM (${failedConv} errores). Los archivos pueden tener un formato no soportado por el navegador.<br>
+      <b>Comprima la carpeta en ZIP</b> y arrastre el ZIP aquí — el servidor procesa los DICOM directamente.</div></div>`;
+    _uploadBusy = false;
+    return;
+  }
+
+  // --- PASO 3: confirmar subida con tamaño real ---
   const uploadBytes = [...fd].reduce((s, pair) => s + (pair[1].size || 0), 0);
   const uploadMb = (uploadBytes / 1048576).toFixed(1);
-  box.innerHTML = `<p style="color:var(--muted)">⏳ Subiendo ${totalN} archivo(s) (≈ ${uploadMb} MB)${nDcm ? ` · ${nDcm} DICOM convertidos a JPG` : ""}…</p>`;
-  // timeout dinámico: mínimo 180s, hasta 600s para archivos grandes
-  const timeoutSec = Math.min(600, Math.max(180, totalN * 3, Math.round(uploadBytes / 1048576) * 5));
+  const totalUpload = fd.getAll("files").length;
+  if (totalUpload === 0) {
+    box.innerHTML = `<div class="drug-warning sev-border-yellow"><div class="d-title">Nada que subir</div><div>Todos los archivos fallaron en la conversión.</div></div>`;
+    _uploadBusy = false;
+    return;
+  }
+  let summary = `${totalUpload} archivo(s) (≈ ${uploadMb} MB)`;
+  if (converted) summary += ` · ${converted} DICOM convertidos`;
+  if (failedConv) summary += ` · ${failedConv} sin convertir (no se suben)`;
+  if (totalUpload > 200 && !confirm(`¿Subir ${summary}?\n\nSon muchos archivos individuales — puede demorar y consumir memoria.\n• Aceptar = subir ahora\n• Cancelar = comprima la carpeta en ZIP`)) {
+    box.innerHTML = `<div class="drug-warning sev-border-yellow"><div class="d-title">Cancelado</div><div>Comprima la carpeta en ZIP y arrastre el ZIP aquí.</div></div>`;
+    _uploadBusy = false;
+    return;
+  }
+
+  // --- PASO 4: subir ---
+  box.innerHTML = `<p style="color:var(--muted)">⏳ Subiendo ${summary}…</p>`;
+  const timeoutSec = Math.min(600, Math.max(180, totalUpload * 3, Math.round(uploadBytes / 1048576) * 5));
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), timeoutSec * 1000);
   try {
@@ -1302,7 +1347,7 @@ async function uploadBatch() {
     clearTimeout(timeoutId);
     const data = await res.json();
     if (!res.ok || data.error) {
-      box.innerHTML = `<div class="drug-warning sev-border-red"><div class="d-title">Error</div><div>${esc(data.error || "Error al subir")}</div></div>`;
+      box.innerHTML = `<div class="drug-warning sev-border-red"><div class="d-title">Error del servidor</div><div>${esc(data.error || `HTTP ${res.status}`)}. Intente comprimir la carpeta en ZIP.</div></div>`;
       return;
     }
     let movedCreated = null;
@@ -1352,12 +1397,11 @@ async function uploadBatch() {
     clearTimeout(timeoutId);
     if (e.name === "AbortError") {
       box.innerHTML = `<div class="drug-warning sev-border-red"><div class="d-title">⏱ Tiempo de espera agotado</div>
-        <div>La subida tardó demasiado (más de ${timeoutSec}s). Con ${totalN} archivos (≈ ${uploadMb} MB comprimidos) puede demorar varios minutos.<br>
-        • Si los archivos están en la nube, <b>abrí cada archivo o sincronícelos localmente</b> antes de subir.<br>
+        <div>La subida tardó demasiado (más de ${timeoutSec}s). Con ${totalUpload} archivos (≈ ${uploadMb} MB) puede demorar.<br>
         • Pruebe <b>comprimir la carpeta en ZIP</b> y subir el ZIP directamente.</div></div>`;
     } else {
       box.innerHTML = `<div class="drug-warning sev-border-red"><div class="d-title">Error de conexión</div>
-        <div>${esc(e.message || "Error desconocido")}. Verifique su conexión o intente comprimir la carpeta en ZIP.</div></div>`;
+        <div>${esc(e.message || "Error desconocido")}. Intente comprimir la carpeta en ZIP y subir el ZIP.</div></div>`;
     }
   } finally {
     _uploadBusy = false;
