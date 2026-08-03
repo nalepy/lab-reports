@@ -570,6 +570,13 @@ def _bg_generate_reports(pids: list[int]):
             _ai_jobs[pid] = {"status": "error", "error": str(e)}
 
 
+@app.get("/api/ai-stale")
+def ai_stale_list():
+    """Lista pacientes cuyo informe IA falta o está vencido (sin encolar jobs)."""
+    stale = [p["id"] for p in db.persons() if _ai_report_stale(p["id"])]
+    return {"stale": stale}
+
+
 @app.post("/api/ensure-ai-reports")
 def ensure_ai_reports(pid: int | None = None):
     """Verifica TODOS los pacientes; encola en 2do plano los informes IA

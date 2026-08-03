@@ -9,6 +9,8 @@ const state = {
   medAutocomplete: [],
   aiReportExists: false,   // hay informe IA guardado/renderizado
   _tab: "resumen",
+  aiDirtyPids: new Set(),  // pacientes con datos nuevos pendientes de informe IA
+  aiUpdating: false,
 };
 
 let _pendingQueue = [];   // informes con paciente no reconocido (confirmación)
@@ -204,7 +206,10 @@ async function resolvePending() {
     } else {
       toast(`Informe ${data.created ? "creó paciente nuevo" : "guardado"} — ${esc(data.person_name || "")}`, "green");
       await loadPersons();
-      if (data.pid) await selectPerson(data.pid);
+      if (data.pid) {
+        markAIDirty(data.pid);
+        await selectPerson(data.pid);
+      }
     }
     _showNextPending();
   } catch (e) {
@@ -246,6 +251,8 @@ async function selectPerson(id) {
     if (state.current !== token) return;  // stale request
     state.detail = detail;
     renderPerson();
+    // si el backend marca datos más nuevos que el informe IA → avisar (sin LLM aún)
+    if (detail.new_info && detail.new_info.has_new) markAIDirty(id);
   } catch (e) {
     if (state.current !== token) return;
     $("#personPanel").innerHTML = `<div class="empty-state"><h2>Error</h2><p>${esc(e.message)}</p></div>`;
@@ -520,9 +527,8 @@ async function saveMetrics() {
   state.detail = await api(`/api/person/${pid}`);
   await loadPersons();
   renderPerson();
-  toast("Datos guardados — actualizando informe IA en segundo plano…", "green");
-  // el informe IA debe reflejar los vitales/notas: regenerar en 2do plano
-  ensureAIRepos(pid);
+  toast("Datos guardados", "green");
+  markAIDirty(pid);
 }
 
 async function downloadFullPDF() {
@@ -682,6 +688,7 @@ async function addMed(ev) {
     toast("Medicamento agregado", "green");
     state.detail = await api(`/api/person/${state.current}`);
     renderPerson();
+    markAIDirty(state.current);
   } catch (e) {
     toast("Error: " + e.message, "red");
   }
@@ -694,6 +701,7 @@ async function delMed(mid) {
     await api(`/api/person/${state.current}/meds/${mid}`, { method: "DELETE" });
     state.detail = await api(`/api/person/${state.current}`);
     renderPerson();
+    markAIDirty(state.current);
   } catch (e) {
     toast("Error: " + e.message, "red");
   }
@@ -1064,6 +1072,7 @@ async function generateAIReport() {
     }
     state.aiReportExists = true;
     updateAIButtonLabel();
+    if (state.current) clearAIDirty(state.current);
     box.innerHTML = `
       <div style="font-size:12px;color:var(--muted);margin-bottom:6px">
         ${res.saved ? "📋 Informe guardado" : "✨ Recién generado"} con <strong>${esc(res.model)}</strong> · ${esc(res.generated_at)}</div>
@@ -1404,6 +1413,7 @@ async function deleteDocument(docId) {
     state.detail = await api(`/api/person/${state.current}`);
     renderPerson();
     toast("Documento eliminado", "green");
+    markAIDirty(state.current);
   } catch (e) {
     toast("Error: " + e.message, "red");
   }
@@ -1428,8 +1438,8 @@ async function processStudies() {
     const msg = `Analizados: ${s.analyzed ?? 0} · Errores: ${s.errors ?? 0}`;
     toast((s.errors ? "Proceso con errores: " : "Procesado: ") + msg,
       s.errors ? "red" : "green");
-    // regenerar el informe principal con los hallazgos de imagen
-    if ((s.analyzed ?? 0) > 0) ensureAIReports(pid);
+    // hallazgos listos en la carpeta; el informe principal se actualiza con "AI update"
+    if ((s.analyzed ?? 0) > 0) markAIDirty(pid);
   } catch (e) {
     toast("Error al procesar: " + e.message, "red");
     state.detail = await api(`/api/person/${pid}`);
@@ -1782,16 +1792,14 @@ async function uploadBatch() {
     ).join("");
     const summaryHtml = `<div class="drug-warning sev-border-green"><div class="d-title">✅ Subida completa: ${esc(totalUploaded)} archivo(s)</div></div>${convNote}${dedupNote}${zipRows}`;
     box.innerHTML = summaryHtml;
-    toast(totalUploaded > 0 ? "Subida completa — analizando con IA…" : "Subida completa (nada nuevo)", totalUploaded > 0 ? "yellow" : "green");
+    toast(totalUploaded > 0 ? "Subida completa — tablas actualizadas" : "Subida completa (nada nuevo)",
+      totalUploaded > 0 ? "green" : "green");
     state.detail = await api(`/api/person/${state.current}`);
     await loadPersons();
     renderPerson();
-    if (totalUploaded > 0) {
-      // analizar automáticamente (processStudies regenera el informe principal)
-      await processStudies();
-    } else {
-      ensureAIReports();
-    }
+    // PDFs de lab ya se parsearon en el servidor (tablas/gráficos al instante).
+    // Análisis de imagen + informe IA: aviso amarillo / botón AI update / idle 3 min.
+    if (totalUploaded > 0) markAIDirty(state.current);
   } catch (e) {
     await _purgeDir(tmpDir).catch(() => {});
     try { await rootDir.removeEntry(tmpName); } catch (e2) { /* noop */ }
@@ -1833,6 +1841,7 @@ async function fetchDicomLibrary(ev) {
     box.innerHTML = `<div class="drug-warning sev-border-green"><div class="d-title">✅ ${esc(data.message)}</div></div>`;
     state.detail = await api(`/api/person/${state.current}`);
     renderPerson();
+    markAIDirty(state.current);
   } catch (e) {
     box.innerHTML = `<div class="drug-warning sev-border-red"><div class="d-title">Error</div><div>${esc(e.message)}</div></div>`;
   }
@@ -1967,9 +1976,149 @@ async function confirmDeletePerson() {
   await loadPersons();
 }
 
-/* ---------------- informes IA en segundo plano ---------------- */
+/* ---------------- informes IA: dirty flag + idle + botón fijo ---------------- */
 
-async function ensureAIRepos(pid) {
+const AI_IDLE_MS = 3 * 60 * 1000;  // 3 min de inactividad → actualizar en background
+let _aiIdleTimer = null;
+let _aiActivityBound = false;
+
+function markAIDirty(pid) {
+  if (pid == null) pid = state.current;
+  if (pid == null) return;
+  state.aiDirtyPids.add(Number(pid));
+  updateAIStaleUI();
+  resetAIIdleTimer();
+}
+
+function clearAIDirty(pid) {
+  if (pid == null) state.aiDirtyPids.clear();
+  else state.aiDirtyPids.delete(Number(pid));
+  updateAIStaleUI();
+  if (!state.aiDirtyPids.size) {
+    clearTimeout(_aiIdleTimer);
+    _aiIdleTimer = null;
+  }
+}
+
+function updateAIStaleUI() {
+  const banner = document.getElementById("aiStaleBanner");
+  const fab = document.getElementById("aiUpdateFab");
+  const dirty = state.aiDirtyPids.size > 0;
+  const running = state.aiUpdating;
+  if (banner) {
+    if (running) {
+      banner.style.display = "flex";
+      banner.classList.add("running");
+      banner.querySelector("span").innerHTML =
+        "🔄 Actualizando <strong>informe(s) IA</strong> en segundo plano…";
+      const b = banner.querySelector("button");
+      if (b) { b.disabled = true; b.textContent = "Actualizando…"; }
+    } else if (dirty) {
+      banner.style.display = "flex";
+      banner.classList.remove("running");
+      banner.querySelector("span").innerHTML =
+        "⚠️ Hay información nueva. El <strong>informe IA</strong> está desactualizado — actualícelo cuando termine de editar.";
+      const b = banner.querySelector("button");
+      if (b) { b.disabled = false; b.textContent = "Actualizar IA ahora"; }
+    } else {
+      banner.style.display = "none";
+      banner.classList.remove("running");
+    }
+  }
+  if (fab) {
+    fab.classList.toggle("needs-update", dirty && !running);
+    fab.classList.toggle("running", running);
+    fab.disabled = running;
+    const lab = fab.querySelector(".ai-fab-label");
+    if (lab) lab.textContent = running ? "Updating…" : "AI update";
+  }
+}
+
+function resetAIIdleTimer() {
+  clearTimeout(_aiIdleTimer);
+  _aiIdleTimer = null;
+  if (!state.aiDirtyPids.size || state.aiUpdating) return;
+  _aiIdleTimer = setTimeout(() => {
+    if (state.aiDirtyPids.size && !state.aiUpdating) {
+      runAIUpdate({ auto: true });
+    }
+  }, AI_IDLE_MS);
+}
+
+function bindAIActivity() {
+  if (_aiActivityBound) return;
+  _aiActivityBound = true;
+  const bump = () => {
+    if (state.aiDirtyPids.size && !state.aiUpdating) resetAIIdleTimer();
+  };
+  ["mousemove", "keydown", "click", "scroll", "touchstart"].forEach((ev) => {
+    document.addEventListener(ev, bump, { passive: true, capture: true });
+  });
+}
+
+async function loadAIStale() {
+  try {
+    const res = await fetch("/api/ai-stale", { credentials: "same-origin" });
+    if (!res.ok) return;
+    const d = await res.json();
+    (d.stale || []).forEach((pid) => state.aiDirtyPids.add(Number(pid)));
+    updateAIStaleUI();
+    if (state.aiDirtyPids.size) resetAIIdleTimer();
+  } catch (e) { /* silencioso */ }
+}
+
+/** Actualiza análisis de imagen + informe IA de los pacientes pendientes.
+ *  No se llama en cada edición: solo botón, banner, o idle 3 min. */
+async function runAIUpdate(opts) {
+  const auto = !!(opts && opts.auto);
+  if (state.aiUpdating) return;
+  let pids = [...state.aiDirtyPids];
+  if (!pids.length && state.current) pids = [state.current];
+  if (!pids.length) {
+    toast("No hay cambios pendientes para el informe IA", "green");
+    return;
+  }
+  state.aiUpdating = true;
+  clearTimeout(_aiIdleTimer);
+  _aiIdleTimer = null;
+  updateAIStaleUI();
+  toast(auto
+    ? "🔄 3 min sin actividad — actualizando informe IA en segundo plano…"
+    : "🔄 Actualizando informe IA…", "yellow");
+  try {
+    for (const pid of pids) {
+      try {
+        await fetch(`/api/person/${pid}/process-studies`, {
+          method: "POST", credentials: "same-origin",
+        });
+      } catch (e) { /* seguir */ }
+      try {
+        await fetch(`/api/ensure-ai-reports?pid=${pid}`, {
+          method: "POST", credentials: "same-origin",
+        });
+      } catch (e) { /* pollAIJobs informará */ }
+      state.aiDirtyPids.delete(Number(pid));
+    }
+  } finally {
+    state.aiUpdating = false;
+    updateAIStaleUI();
+    if (state.current) {
+      try {
+        state.detail = await api(`/api/person/${state.current}`);
+        await loadPersons();
+        renderPerson();
+        if (typeof autoLoadAIReport === "function") autoLoadAIReport().catch(() => {});
+      } catch (e) { /* noop */ }
+    }
+    if (!state.aiDirtyPids.size) {
+      toast("Informe IA actualizado", "green");
+    } else {
+      resetAIIdleTimer();
+    }
+  }
+}
+
+async function ensureAIReports(pid) {
   try {
     const q = pid ? `?pid=${pid}` : "";
     const res = await fetch("/api/ensure-ai-reports" + q, {
@@ -1980,7 +2129,7 @@ async function ensureAIRepos(pid) {
     if (d.pending && d.pending.length) {
       toast(`🔄 ${d.pending.length} informe(s) IA en segundo plano…`, "yellow");
     }
-  } catch (e) { /* silencioso: no bloquear navegación */ }
+  } catch (e) { /* silencioso */ }
 }
 
 async function pollAIJobs() {
@@ -1994,10 +2143,12 @@ async function pollAIJobs() {
       const job = jobs[state.current];
       if (state._lastJobTs !== (job.finished_at || "")) {
         state._lastJobTs = job.finished_at || "";
+        clearAIDirty(state.current);
         const pid = state.current;
         state.detail = await api(`/api/person/${pid}`);
         await loadPersons();
         renderPerson();
+        if (typeof autoLoadAIReport === "function") autoLoadAIReport().catch(() => {});
         toast("Informe IA actualizado en segundo plano", "green");
       }
     }
@@ -2006,7 +2157,8 @@ async function pollAIJobs() {
 
 document.addEventListener("DOMContentLoaded", () => {
   loadPersons();
-  ensureAIRepos();
+  loadAIStale();
+  bindAIActivity();
   setInterval(pollAIJobs, 15000);
   document.addEventListener("keydown", _galleryKeydown);
   document.addEventListener("wheel", _galleryWheel, { passive: false });

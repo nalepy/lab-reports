@@ -4,12 +4,16 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Panel de Laboratorio Clínico</title>
-<link rel="stylesheet" href="/static/style.css?v=20260805g">
+<link rel="stylesheet" href="/static/style.css?v=20260805j">
 <script src="/static/vendor/chart.umd.min.js"></script>
 <script src="/static/marked.min.js"></script>
 <script src="/static/dicom-convert.js?v=20260805e"></script>
 </head>
 <body>
+<div id="aiStaleBanner" class="ai-stale-banner" style="display:none" role="status">
+  <span>⚠️ Hay información nueva. El <strong>informe IA</strong> está desactualizado — actualícelo cuando termine de editar.</span>
+  <button type="button" onclick="runAIUpdate()">Actualizar IA ahora</button>
+</div>
 <header>
   <div class="header-row">
     <h1><span class="brand-mark">🧪</span> Panel de Laboratorio Clínico</h1>
@@ -18,6 +22,11 @@
     </div>
   </div>
 </header>
+<button type="button" id="aiUpdateFab" class="ai-update-fab" onclick="runAIUpdate()"
+        title="Actualizar informes IA (estudios + informe médico)">
+  <span class="ai-fab-icon">🧠</span>
+  <span class="ai-fab-label">AI update</span>
+</button>
 
 <main>
   <aside id="personList" class="person-list"></aside>
@@ -146,6 +155,6 @@
   </div>
 </div>
 
-<script src="/static/app.js?v=20260805i"></script>
+<script src="/static/app.js?v=20260805j"></script>
 </body>
 </html>

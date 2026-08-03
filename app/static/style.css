@@ -910,6 +910,88 @@ td .trend-flat { color: var(--muted); }
 /* aviso de información nueva para el informe IA */
 .new-info-banner { border-left-width: 4px; }
 
+/* banner fijo: informe IA desactualizado */
+.ai-stale-banner {
+  position: sticky; top: 0; z-index: 90;
+  display: none;
+  align-items: center; gap: 12px; flex-wrap: wrap;
+  background: #fff8e6;
+  color: #7a5a00;
+  border-bottom: 2px solid var(--amber, #d4a017);
+  padding: 10px 18px;
+  font-size: 13.5px;
+  box-shadow: 0 2px 8px rgba(168,106,0,.12);
+}
+.ai-stale-banner strong { color: #5c4300; }
+.ai-stale-banner button {
+  margin-left: auto;
+  background: var(--amber, #d4a017);
+  color: #fff;
+  border: none;
+  border-radius: 999px;
+  padding: 6px 16px;
+  font-weight: 700;
+  font-size: 12.5px;
+  cursor: pointer;
+}
+.ai-stale-banner button:hover { filter: brightness(1.05); }
+.ai-stale-banner.running {
+  background: #eef6ff;
+  color: #1a4a7a;
+  border-bottom-color: var(--blue, #2b6cb0);
+}
+.ai-stale-banner.running strong { color: #0f3a66; }
+.ai-stale-banner.running button { background: var(--blue, #2b6cb0); opacity: .7; cursor: wait; }
+
+/* botón fijo lateral: AI update */
+.ai-update-fab {
+  position: fixed;
+  right: 18px;
+  top: 50%;
+  transform: translateY(-50%);
+  z-index: 95;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  background: #1e293b;
+  color: #fff;
+  border: 2px solid transparent;
+  border-radius: 14px;
+  padding: 14px 10px;
+  min-width: 64px;
+  cursor: pointer;
+  box-shadow: 0 6px 20px rgba(16,21,28,.28);
+  font-weight: 700;
+  font-size: 11px;
+  letter-spacing: .02em;
+  transition: background .15s, border-color .15s, box-shadow .15s, transform .15s;
+}
+.ai-update-fab:hover { background: #0f172a; transform: translateY(-50%) scale(1.03); }
+.ai-update-fab .ai-fab-icon { font-size: 22px; line-height: 1; }
+.ai-update-fab .ai-fab-label { writing-mode: horizontal-tb; text-align: center; max-width: 56px; line-height: 1.15; }
+.ai-update-fab.needs-update {
+  background: #b45309;
+  border-color: #fbbf24;
+  box-shadow: 0 0 0 4px rgba(251,191,36,.35), 0 6px 20px rgba(180,83,9,.35);
+  animation: ai-fab-pulse 1.8s ease-in-out infinite;
+}
+.ai-update-fab.running {
+  background: var(--blue, #2b6cb0);
+  border-color: #93c5fd;
+  animation: none;
+  cursor: wait;
+}
+.ai-update-fab:disabled { opacity: .75; cursor: wait; }
+@keyframes ai-fab-pulse {
+  0%, 100% { box-shadow: 0 0 0 4px rgba(251,191,36,.35), 0 6px 20px rgba(180,83,9,.35); }
+  50% { box-shadow: 0 0 0 8px rgba(251,191,36,.18), 0 6px 24px rgba(180,83,9,.45); }
+}
+@media (max-width: 720px) {
+  .ai-update-fab { right: 10px; padding: 10px 8px; min-width: 52px; }
+  .ai-update-fab .ai-fab-label { font-size: 10px; }
+}
+
 /* ============================================================
    NUEVO PACIENTE — modal + botón
    ============================================================ */
