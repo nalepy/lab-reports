@@ -407,6 +407,15 @@ function renderPerson() {
           </div>
           <div class="med-hint">La subida comienza automáticamente al elegir o soltar archivos/carpetas. Los DICOM se convierten a imagen/video en el navegador antes de subir.</div>
           <div class="med-hint" style="margin-top:4px">💡 Si una carpeta tiene muchos DICOM, <b>compáctela en ZIP</b> y súbala como archivo: el servidor la descomprime automáticamente.</div>
+          <div class="med-hint" style="margin-top:4px">
+            <label style="display:inline-flex;align-items:center;gap:6px;cursor:pointer">
+              <input type="checkbox" id="dedupToggle" checked> Descartar imágenes casi idénticas
+            </label>
+            <span style="margin-left:10px">mín. diferencia:
+              <input type="number" id="dedupThreshold" value="10" min="1" max="50" step="1"
+                     style="width:56px;padding:2px 6px;border:1px solid #ccc;border-radius:6px">%
+            </span>
+          </div>
           <input type="file" id="uploadFiles" class="upload-input" multiple
                  accept=".pdf,.jpg,.jpeg,.png,.gif,.webp,.bmp,.tif,.tiff,.dcm,.dicom,.zip,.doc,.docx,.txt,.csv"
                  onchange="onUploadPicked()">
@@ -1294,6 +1303,15 @@ function _dosDateTime(d) {
   return { time, date };
 }
 
+// Diferencia relativa media entre dos firmas perceptuales [0..1].
+// 0 = idénticas; ~0.5 = muy distintas.
+function _sigDiff(a, b) {
+  if (!a || !b || a.length !== b.length) return 1;
+  let diff = 0;
+  for (let i = 0; i < a.length; i++) diff += Math.abs(a[i] - b[i]);
+  return diff / a.length;
+}
+
 async function _streamZip(outHandle, entries) {
   // ZIP sin compresión (los JPG/WebM ya vienen comprimidos); un archivo a la vez.
   const w = await outHandle.createWritable();
@@ -1368,7 +1386,7 @@ async function uploadBatch() {
   const totalN = files.length;
 
   // --- PASO 1: confirmar conversión (sin depender de extensión) ---
-  if (totalN > 200 && !confirm(`${totalN} archivo(s). Se va a escanear cada archivo para detectar y convertir DICOM a JPG.\n¿Continuar?\n\n• Los DICOM que no se puedan convertir se omiten (nunca se suben en formato original).\n• Cada archivo se guarda temporalmente y se sube empaquetado en ZIP (el servidor lo descomprime).`)) {
+  if (totalN > 200 && !confirm(`${totalN} archivo(s). Se va a escanear cada archivo para detectar y convertir DICOM a JPG.\n¿Continuar?\n\n• Los DICOM que no se puedan convertir se omiten (nunca se suben en formato original).\n• Cada archivo se guarda temporalmente y se sube empaquetado en ZIP (el servidor lo descomprime).\n• Las imágenes casi idénticas se descartan automáticamente (se puede desactivar).`)) {
     _pendingUpload = []; list.innerHTML = "";
     box.innerHTML = `<div class="drug-warning sev-border-yellow"><div class="d-title">Cancelado</div><div>No se subió nada.</div></div>`;
     return;
@@ -1396,24 +1414,37 @@ async function uploadBatch() {
   let converted = 0;
   let passthrough = 0;
   let skipped = 0;
+  let deduped = 0;
   let done = 0;
+  const dedupOn = $("#dedupToggle") ? $("#dedupToggle").checked : false;
+  const minDiffPct = Math.min(50, Math.max(1, parseFloat($("#dedupThreshold") ? $("#dedupThreshold").value : "10") || 10));
+  const minDiff = minDiffPct / 100;
+  let lastSig = null;
   box.innerHTML = `<p style="color:var(--muted)">⏳ Escaneando, convirtiendo y guardando… 0/${totalN}</p>`;
   for (const f of files) {
     try {
       const res = await window.DicomConverter.convert(f, { quality: 0.92 });
       if (res && (res.kind === "image" || res.kind === "video")) {
-        const ext = res.kind === "image" ? "jpg" : "webm";
-        const rel = f.webkitRelativePath || f.name;
-        const slash = rel.lastIndexOf("/");
-        const dirPart = slash >= 0 ? rel.slice(0, slash + 1) : "";
-        const namePart = slash >= 0 ? rel.slice(slash + 1) : rel;
-        const base = namePart.replace(/\.[^.]+$/, "") || namePart;
-        await _opfsWrite(tmpDir, dirPart + base + "." + ext, res.blob);
-        converted++;
+        if (res.kind === "image" && dedupOn && lastSig && res.sig && _sigDiff(lastSig, res.sig) < minDiff) {
+          // imagen casi idéntica a la última conservada → se descarta
+          deduped++;
+        } else {
+          const ext = res.kind === "image" ? "jpg" : "webm";
+          const rel = f.webkitRelativePath || f.name;
+          const slash = rel.lastIndexOf("/");
+          const dirPart = slash >= 0 ? rel.slice(0, slash + 1) : "";
+          const namePart = slash >= 0 ? rel.slice(slash + 1) : rel;
+          const base = namePart.replace(/\.[^.]+$/, "") || namePart;
+          await _opfsWrite(tmpDir, dirPart + base + "." + ext, res.blob);
+          converted++;
+          if (res.kind === "image" && res.sig) lastSig = res.sig;
+          if (res.kind === "video") lastSig = null; // el video rompe la secuencia
+        }
       } else if (res && res.kind === "unparsed" && res.dicom === false) {
         // no es DICOM → se guarda el original
         await _opfsWrite(tmpDir, f.webkitRelativePath || f.name, f);
         passthrough++;
+        lastSig = null;
       } else {
         // DICOM que no se pudo convertir → se omite (nunca se sube raw)
         skipped++;
@@ -1426,6 +1457,7 @@ async function uploadBatch() {
       const parts = [];
       if (converted) parts.push(`${converted} convertidos`);
       if (passthrough) parts.push(`${passthrough} no-DICOM`);
+      if (deduped) parts.push(`${deduped} casi-idénticos descartados`);
       if (skipped) parts.push(`${skipped} omitidos`);
       box.innerHTML = `<p style="color:var(--muted)">⏳ Procesando… ${done}/${totalN} (${parts.join(", ")})</p>`;
     }
@@ -1449,6 +1481,7 @@ async function uploadBatch() {
   let summary = `${totalUpload} archivo(s) (≈ ${uploadMb} MB)`;
   if (converted) summary += ` · ${converted} DICOM convertidos a JPG`;
   if (passthrough) summary += ` · ${passthrough} no-DICOM pasados`;
+  if (deduped) summary += ` · ${deduped} casi-idénticos descartados`;
   if (skipped) summary += ` · ${skipped} DICOM omitidos`;
   if (totalUpload > 200 && !confirm(`¿Subir ${summary}?\n\n• Se empaqueta en ZIP(s) de ≤90 MB y el servidor los descomprime.\n\n¿Subir ahora?`)) {
     await _purgeDir(tmpDir).catch(() => {});
@@ -1510,6 +1543,9 @@ async function uploadBatch() {
     const convNote = converted
       ? `<div class="up-result">🖼️ ${converted} DICOM convertido(s) a ${converted > 1 ? "imágenes/video" : "imagen/video"}</div>`
       : "";
+    const dedupNote = deduped
+      ? `<div class="up-result">📉 ${deduped} imagen(es) casi idéntica(s) descartada(s) (diferencia < ${minDiffPct}%)</div>`
+      : "";
     const zipRows = rows.map((r) =>
       r.ok
         ? `<div class="up-result">✅ <b>${esc(r.file)}</b> — ${esc(r.message)}</div>`
@@ -1521,7 +1557,7 @@ async function uploadBatch() {
            <div>⚠️ Considere <strong>regenerar el informe IA</strong> para que incluya la información nueva.</div>
          </div>`
       : "";
-    const summaryHtml = `<div class="drug-warning sev-border-green"><div class="d-title">✅ Subida completa: ${esc(totalUploaded)} archivo(s)</div></div>${convNote}${zipRows}${note}`;
+    const summaryHtml = `<div class="drug-warning sev-border-green"><div class="d-title">✅ Subida completa: ${esc(totalUploaded)} archivo(s)</div></div>${convNote}${dedupNote}${zipRows}${note}`;
     box.innerHTML = summaryHtml;
     toast(totalUploaded > 0 ? "Subida completa — ⚠️ considere regenerar el informe IA" : "Subida completa (nada nuevo)", totalUploaded > 0 ? "yellow" : "green");
     state.detail = await api(`/api/person/${state.current}`);

@@ -704,6 +704,47 @@
     });
   }
 
+  // ── Perceptual signature (near-duplicate detection) ───────────────
+
+  /**
+   * Downsample a rendered ImageData into a small grid of mean grayscale
+   * values (R channel). Compact 24×24 signature used to detect
+   * near-identical frames before upload. Returns Float32Array or null.
+   */
+  function computeSig(imageData, grid) {
+    try {
+      grid = grid || 24;
+      var w = imageData.width;
+      var h = imageData.height;
+      if (!w || !h) return null;
+      var data = imageData.data;
+      var gw = Math.max(1, Math.floor(w / grid));
+      var gh = Math.max(1, Math.floor(h / grid));
+      var sig = new Float32Array(grid * grid);
+      for (var gy = 0; gy < grid; gy++) {
+        var y0 = gy * gh;
+        var y1 = Math.min(h, y0 + gh);
+        for (var gx = 0; gx < grid; gx++) {
+          var x0 = gx * gw;
+          var x1 = Math.min(w, x0 + gw);
+          var sum = 0;
+          var cnt = 0;
+          for (var y = y0; y < y1; y++) {
+            var rowOff = y * w * 4;
+            for (var x = x0; x < x1; x++) {
+              sum += data[rowOff + x * 4];
+              cnt++;
+            }
+          }
+          sig[gy * grid + gx] = cnt ? (sum / cnt) / 255 : 0;
+        }
+      }
+      return sig;
+    } catch (e) {
+      return null;
+    }
+  }
+
   // ── Video recording ───────────────────────────────────────────────
 
   function recordVideo(frames, dv, meta, mode, opts) {
@@ -908,13 +949,21 @@
             if (frames.length === 1) {
               renderFrame(dv, frames[0], meta, mode).then(function (canvas) {
                 var quality = opts.quality !== undefined ? opts.quality : 0.92;
+                var sig = null;
+                try {
+                  var ictx = canvas.getContext('2d');
+                  if (ictx && typeof ictx.getImageData === 'function') {
+                    sig = computeSig(ictx.getImageData(0, 0, meta.cols, meta.rows));
+                  }
+                } catch (e) { /* sig queda null → no se compara */ }
                 canvas.toBlob(function (blob) {
                   var baseName = (file.name || 'dicom').replace(/\.dcm$/i, '');
                   resolve({
                     kind: 'image',
                     blob: blob,
                     name: baseName + '.jpg',
-                    meta: meta
+                    meta: meta,
+                    sig: sig
                   });
                 }, 'image/jpeg', quality);
               }).catch(function () {
