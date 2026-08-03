@@ -1244,65 +1244,57 @@ async function uploadBatch() {
   const files = _pendingUpload;
   if (!files.length) { toast("Seleccione o arrastre archivos/carpetas", "yellow"); return; }
   const totalN = files.length;
-  const nDcm = files.filter((f) => /\.(dcm|dicom)$/i.test(f.name || "")).length;
   const canConvert = !!(window.DicomConverter &&
     (!document.getElementById("uploadConvertDicom") || document.getElementById("uploadConvertDicom").checked));
 
-  // --- PASO 1: confirmar conversión ---
-  if (nDcm && canConvert) {
-    const hint = totalN > 200
-      ? `\n\n⚠️ Son muchos archivos (${totalN}). Si la subida falla, comprima la carpeta en ZIP y arrastre el ZIP en vez.`
-      : "";
-    if (!confirm(`Se van a convertir ${nDcm} archivo(s) DICOM a imágenes JPG/WebM antes de subir (más liviano).\nTotal: ${totalN} archivo(s).${hint}\n\n¿Continuar?`)) {
-      _pendingUpload = [];
-      list.innerHTML = "";
-      box.innerHTML = `<div class="drug-warning sev-border-yellow"><div class="d-title">Cancelado</div><div>Puede comprimir la carpeta en ZIP y arrastrar el ZIP.</div></div>`;
-      return;
-    }
-  } else if (totalN > 200) {
-    if (!confirm(`${totalN} archivo(s) — puede fallar por límites del navegador.\n\n¿Prefiere comprimir la carpeta en ZIP y subir el ZIP? El servidor lo descomprime automáticamente.\n• Aceptar = subir así\n• Cancelar = comprima la carpeta primero`)) {
-      _pendingUpload = [];
-      list.innerHTML = "";
-      box.innerHTML = `<div class="drug-warning sev-border-yellow"><div class="d-title">Cancelado</div><div>Comprima la carpeta en ZIP y arrastre el ZIP aquí.</div></div>`;
+  // --- PASO 1: confirmar conversión (sin depender de extensión) ---
+  if (canConvert) {
+    if (totalN > 200 && !confirm(`${totalN} archivo(s). Se va a escanear cada archivo para detectar y convertir DICOM a JPG.\n¿Continuar?\n\n• Si la subida falla, comprima la carpeta en ZIP y arrastre el ZIP.`)) {
+      _pendingUpload = []; list.innerHTML = "";
+      box.innerHTML = `<div class="drug-warning sev-border-yellow"><div class="d-title">Cancelado</div><div>Comprima la carpeta en ZIP y arrastre el ZIP.</div></div>`;
       return;
     }
   }
 
-  // --- PASO 2: convertir DICOMs ---
+  // --- PASO 2: escanear y convertir cualquier DICOM encontrado ---
   _uploadBusy = true;
   const fd = new FormData();
   let converted = 0;
-  let failedConv = 0;
+  let unparsed = 0;
+  let errors = 0;
   let done = 0;
-  if (nDcm && canConvert) {
-    box.innerHTML = `<p style="color:var(--muted)">⏳ Convirtiendo DICOM a imágenes… 0/${nDcm}</p>`;
+  if (canConvert) {
+    box.innerHTML = `<p style="color:var(--muted)">⏳ Escaneando y convirtiendo archivos… 0/${totalN}</p>`;
     for (const f of files) {
-      if (!/\.(dcm|dicom)$/i.test(f.name || "")) {
-        fd.append("files", f, f.webkitRelativePath || f.name);
-        done++;
-        continue;
-      }
       try {
         const res = await window.DicomConverter.convert(f, { quality: 0.92 });
         if (res && (res.kind === "image" || res.kind === "video")) {
           const ext = res.kind === "image" ? "jpg" : "webm";
-          const base = (f.webkitRelativePath || f.name).replace(/\.(dcm|dicom)$/i, "");
+          const base = (f.webkitRelativePath || f.name).replace(/\.[^.]+$/, "");
           fd.append("files", res.blob, `${base}.${ext}`);
           converted++;
+        } else if (res && res.kind === "unparsed") {
+          // no es DICOM → pasar el original
+          fd.append("files", f, f.webkitRelativePath || f.name);
+          unparsed++;
         } else {
-          // conversión sin resultado → no subir (el original es muy grande)
-          failedConv++;
+          fd.append("files", f, f.webkitRelativePath || f.name);
+          unparsed++;
         }
       } catch (e) {
-        failedConv++;
+        fd.append("files", f, f.webkitRelativePath || f.name);
+        errors++;
       }
       done++;
-      if (done % 25 === 0 || done === nDcm) {
-        box.innerHTML = `<p style="color:var(--muted)">⏳ Convirtiendo DICOM… ${done}/${nDcm} (${converted} ok, ${failedConv} errores)</p>`;
+      if (done % 25 === 0 || done === totalN) {
+        const parts = [];
+        if (converted) parts.push(`${converted} convertidos`);
+        if (unparsed) parts.push(`${unparsed} no DICOM`);
+        if (errors) parts.push(`${errors} errores`);
+        box.innerHTML = `<p style="color:var(--muted)">⏳ Procesando… ${done}/${totalN} (${parts.join(", ")})</p>`;
       }
     }
   } else {
-    // sin conversión: pasar todos los archivos tal cual
     for (const f of files) {
       fd.append("files", f, f.webkitRelativePath || f.name);
     }
