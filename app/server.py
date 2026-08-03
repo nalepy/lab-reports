@@ -630,6 +630,12 @@ def _kind_for(fname: str) -> str:
     return "other"
 
 
+def _is_dicom_bytes(content: bytes) -> bool:
+    """True si el contenido parece un DICOM real (magic 'DICM' en offset 128),
+    sin depender de la extensión (los DICOM suelen venir sin extensión)."""
+    return len(content) > 132 and content[128:132] == b"DICM"
+
+
 def _store_upload(pid: int, filename: str, content: bytes) -> dict:
     """Clasifica y guarda un archivo subido desde la web.
 
@@ -641,6 +647,9 @@ def _store_upload(pid: int, filename: str, content: bytes) -> dict:
     if ext not in ALLOWED_EXT:
         return {"ok": False, "file": filename, "status": "error",
                 "message": f"Tipo no soportado ({ext or 'sin extensión'})."}
+    if ext in (".dcm", ".dicom") or _is_dicom_bytes(content):
+        return {"ok": False, "file": filename, "status": "error",
+                "message": "DICOM en bruto rechazado: conviértalo a imagen (JPG) desde el navegador."}
     safe = re.sub(r"[^A-Za-z0-9._-]", "_", filename)
     dest = UPLOAD_DIR / f"p{pid}_{int(time.time())}_{safe}"
     with open(dest, "wb") as f:
@@ -730,33 +739,18 @@ async def upload_batch(pid: int, files: list[UploadFile] = File(...)):
         return JSONResponse({"error": "Persona no encontrada"}, status_code=404)
 
     results = []
-    dcm_group = []
     total_new_reports = 0
     for f in files:
         if not f.filename:
             continue
         content = await f.read()
-        if f.filename.lower().endswith((".dcm", ".dicom")):
-            dcm_group.append((f.filename, content))
+        if f.filename.lower().endswith((".dcm", ".dicom")) or _is_dicom_bytes(content):
+            # DICOM en bruto nunca se guarda: el navegador debe convertirlo a
+            # imagen (JPG/WebM) antes de subir.
+            results.append({"ok": False, "file": f.filename, "status": "error",
+                            "message": "DICOM en bruto rechazado: conviértalo a imagen (JPG) desde el navegador."})
             continue
         results.append(_store_upload(pid, f.filename, content))
-
-    # agrupar DICOM en una sola carpeta (serie), preservando el formato
-    if dcm_group:
-        group_id = f"{int(time.time())}_{pid}"
-        group_dir = UPLOAD_DIR / f"grupo_{group_id}"
-        group_dir.mkdir(parents=True, exist_ok=True)
-        saved = 0
-        for fname, content in dcm_group:
-            safe = re.sub(r"[^A-Za-z0-9._-]", "_", fname)
-            (group_dir / safe).write_bytes(content)
-            saved += 1
-        doc_id = db.add_document(pid, f"Serie DICOM {group_id} ({saved} archivos)",
-                                 str(group_dir), "dicom_folder", saved,
-                                 "Serie DICOM subida desde la web.")
-        results.append({"ok": True, "file": f"Serie DICOM ({saved} archivos)",
-                        "status": "dicom_folder", "document_id": doc_id,
-                        "message": f"Serie DICOM agrupada ({saved} archivos)."})
 
     for r in results:
         total_new_reports += r.get("new_reports", 0)
@@ -933,11 +927,13 @@ async def upload_folder(pid: int, files: list[UploadFile] = File(...),
             continue
         try:
             data = await f.read()
+            if dest.suffix.lower() in (".dcm", ".dicom") or _is_dicom_bytes(data):
+                # DICOM en bruto nunca se guarda
+                skipped += 1
+                continue
             with open(dest, "wb") as fh:
                 fh.write(data)
             saved += 1
-            if dest.suffix.lower() in (".dcm", ".dicom"):
-                dcm_count += 1
         except Exception:  # noqa: BLE001
             skipped += 1
 
@@ -953,10 +949,12 @@ async def upload_folder(pid: int, files: list[UploadFile] = File(...),
                         target = group_dir / safe
                         target.parent.mkdir(parents=True, exist_ok=True)
                         if not m.endswith("/"):
-                            with z.open(m) as src, open(target, "wb") as out:
-                                out.write(src.read())
-                            if target.suffix.lower() in (".dcm", ".dicom"):
-                                dcm_count += 1
+                            data = z.read(m)
+                            if target.suffix.lower() in (".dcm", ".dicom") or _is_dicom_bytes(data):
+                                # DICOM en bruto nunca se guarda (ni por ZIP)
+                                continue
+                            with open(target, "wb") as out:
+                                out.write(data)
                 zf.unlink()
                 saved = len(list(group_dir.rglob("*"))) - 1
             except zipfile.BadZipFile:

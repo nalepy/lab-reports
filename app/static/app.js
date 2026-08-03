@@ -405,9 +405,7 @@ function renderPerson() {
             <button type="button" class="btn" onclick="document.getElementById('uploadFiles').click()">📄 Elegir archivos</button>
             <button type="button" class="btn btn-ghost" onclick="document.getElementById('uploadFolder').click()">📁 Elegir carpeta</button>
           </div>
-          <label class="up-mode"><input type="checkbox" id="uploadConvertDicom" checked>
-            <span>Convertir DICOM a imagen/video antes de subir (más liviano y se ve en el navegador)</span></label>
-          <div class="med-hint">La subida comienza automáticamente al elegir o soltar archivos/carpetas.</div>
+          <div class="med-hint">La subida comienza automáticamente al elegir o soltar archivos/carpetas. Los DICOM se convierten a imagen/video en el navegador antes de subir.</div>
           <div class="med-hint" style="margin-top:4px">💡 Si una carpeta tiene muchos DICOM, <b>compáctela en ZIP</b> y súbala como archivo: el servidor la descomprime automáticamente.</div>
           <input type="file" id="uploadFiles" class="upload-input" multiple
                  accept=".pdf,.jpg,.jpeg,.png,.gif,.webp,.bmp,.tif,.tiff,.dcm,.dicom,.zip,.doc,.docx,.txt,.csv"
@@ -1244,59 +1242,48 @@ async function uploadBatch() {
   const files = _pendingUpload;
   if (!files.length) { toast("Seleccione o arrastre archivos/carpetas", "yellow"); return; }
   const totalN = files.length;
-  const canConvert = !!(window.DicomConverter &&
-    (!document.getElementById("uploadConvertDicom") || document.getElementById("uploadConvertDicom").checked));
 
   // --- PASO 1: confirmar conversión (sin depender de extensión) ---
-  if (canConvert) {
-    if (totalN > 200 && !confirm(`${totalN} archivo(s). Se va a escanear cada archivo para detectar y convertir DICOM a JPG.\n¿Continuar?\n\n• Si la subida falla, comprima la carpeta en ZIP y arrastre el ZIP.`)) {
-      _pendingUpload = []; list.innerHTML = "";
-      box.innerHTML = `<div class="drug-warning sev-border-yellow"><div class="d-title">Cancelado</div><div>Comprima la carpeta en ZIP y arrastre el ZIP.</div></div>`;
-      return;
-    }
+  if (totalN > 200 && !confirm(`${totalN} archivo(s). Se va a escanear cada archivo para detectar y convertir DICOM a JPG.\n¿Continuar?\n\n• Los DICOM que no se puedan convertir se omiten (nunca se suben en formato original).\n• Si la subida falla, comprima la carpeta en ZIP y arrastre el ZIP.`)) {
+    _pendingUpload = []; list.innerHTML = "";
+    box.innerHTML = `<div class="drug-warning sev-border-yellow"><div class="d-title">Cancelado</div><div>Comprima la carpeta en ZIP y arrastre el ZIP.</div></div>`;
+    return;
   }
 
   // --- PASO 2: escanear y convertir cualquier DICOM encontrado ---
   _uploadBusy = true;
   const fd = new FormData();
   let converted = 0;
-  let unparsed = 0;
-  let errors = 0;
+  let passthrough = 0;
+  let skipped = 0;
   let done = 0;
-  if (canConvert) {
-    box.innerHTML = `<p style="color:var(--muted)">⏳ Escaneando y convirtiendo archivos… 0/${totalN}</p>`;
-    for (const f of files) {
-      try {
-        const res = await window.DicomConverter.convert(f, { quality: 0.92 });
-        if (res && (res.kind === "image" || res.kind === "video")) {
-          const ext = res.kind === "image" ? "jpg" : "webm";
-          const base = (f.webkitRelativePath || f.name).replace(/\.[^.]+$/, "");
-          fd.append("files", res.blob, `${base}.${ext}`);
-          converted++;
-        } else if (res && res.kind === "unparsed") {
-          // no es DICOM → pasar el original
-          fd.append("files", f, f.webkitRelativePath || f.name);
-          unparsed++;
-        } else {
-          fd.append("files", f, f.webkitRelativePath || f.name);
-          unparsed++;
-        }
-      } catch (e) {
+  box.innerHTML = `<p style="color:var(--muted)">⏳ Escaneando y convirtiendo archivos… 0/${totalN}</p>`;
+  for (const f of files) {
+    try {
+      const res = await window.DicomConverter.convert(f, { quality: 0.92 });
+      if (res && (res.kind === "image" || res.kind === "video")) {
+        const ext = res.kind === "image" ? "jpg" : "webm";
+        const base = (f.webkitRelativePath || f.name).replace(/\.[^.]+$/, "");
+        fd.append("files", res.blob, `${base}.${ext}`);
+        converted++;
+      } else if (res && res.kind === "unparsed" && res.dicom === false) {
+        // no es DICOM → se pasa el original
         fd.append("files", f, f.webkitRelativePath || f.name);
-        errors++;
+        passthrough++;
+      } else {
+        // DICOM que no se pudo convertir → se omite (nunca se sube raw)
+        skipped++;
       }
-      done++;
-      if (done % 25 === 0 || done === totalN) {
-        const parts = [];
-        if (converted) parts.push(`${converted} convertidos`);
-        if (unparsed) parts.push(`${unparsed} sin convertir`);
-        if (errors) parts.push(`${errors} errores`);
-        box.innerHTML = `<p style="color:var(--muted)">⏳ Procesando… ${done}/${totalN} (${parts.join(", ")})</p>`;
-      }
+    } catch (e) {
+      skipped++;
     }
-  } else {
-    for (const f of files) {
-      fd.append("files", f, f.webkitRelativePath || f.name);
+    done++;
+    if (done % 25 === 0 || done === totalN) {
+      const parts = [];
+      if (converted) parts.push(`${converted} convertidos`);
+      if (passthrough) parts.push(`${passthrough} no-DICOM`);
+      if (skipped) parts.push(`${skipped} omitidos`);
+      box.innerHTML = `<p style="color:var(--muted)">⏳ Procesando… ${done}/${totalN} (${parts.join(", ")})</p>`;
     }
   }
   _pendingUpload = [];
@@ -1313,9 +1300,9 @@ async function uploadBatch() {
   }
   let summary = `${totalUpload} archivo(s) (≈ ${uploadMb} MB)`;
   if (converted) summary += ` · ${converted} DICOM convertidos a JPG`;
-  if (unparsed) summary += ` · ${unparsed} DICOM raw (se procesarán en el servidor)`;
-  if (errors) summary += ` · ${errors} con errores`;
-  if (totalUpload > 200 && !confirm(`¿Subir ${summary}?\n\n• Los DICOM que no pudieron convertirse en el navegador se suben en formato original y se procesarán al hacer "Procesar con IA".\n\n¿Subir ahora?`)) {
+  if (passthrough) summary += ` · ${passthrough} no-DICOM pasados`;
+  if (skipped) summary += ` · ${skipped} DICOM omitidos`;
+  if (totalUpload > 200 && !confirm(`¿Subir ${summary}?\n\n• Los DICOM que no pudieron convertirse se omiten (no se suben en formato original).\n\n¿Subir ahora?`)) {
     box.innerHTML = `<div class="drug-warning sev-border-yellow"><div class="d-title">Cancelado</div><div>Puede comprimir la carpeta en ZIP y arrastrar el ZIP.</div></div>`;
     _uploadBusy = false;
     return;
