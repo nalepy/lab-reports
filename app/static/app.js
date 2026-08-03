@@ -1243,6 +1243,15 @@ async function uploadBatch() {
   const list = $("#uploadFileList");
   const files = _pendingUpload;
   if (!files.length) { toast("Seleccione o arrastre archivos/carpetas", "yellow"); return; }
+  // para lotes grandes, sugerir ZIP antes de empezar
+  if (files.length > 200) {
+    const nDcm = files.filter((f) => /\.(dcm|dicom)$/i.test(f.name || "")).length;
+    if (!confirm(`${files.length} archivo(s) (${nDcm} DICOM). Son muchos archivos individuales — puede fallar por límites del navegador.\n\n¿Prefiere comprimir la carpeta en ZIP y subir el ZIP en vez? El servidor lo descomprime automáticamente.\n\n• "Aceptar" = continuar con los ${files.length} archivos (riesgo de fallo)\n• "Cancelar" = no subir nada, comprima la carpeta primero`)) {
+      _uploadBusy = false;
+      box.innerHTML = `<div class="drug-warning sev-border-yellow"><div class="d-title">💡 Subida cancelada</div><div>Comprima la carpeta en ZIP y arrastre el ZIP aquí. El servidor extrae los DICOM automáticamente.</div></div>`;
+      return;
+    }
+  }
   _uploadBusy = true;
   const convertDcm = window.DicomConverter &&
     (!document.getElementById("uploadConvertDicom") || document.getElementById("uploadConvertDicom").checked);
