@@ -1247,7 +1247,11 @@ async function uploadBatch() {
   const convertDcm = window.DicomConverter &&
     (!document.getElementById("uploadConvertDicom") || document.getElementById("uploadConvertDicom").checked);
   const fd = new FormData();
+  const totalN = files.length;
   let converted = 0;
+  let done = 0;
+  const nDcm = files.filter((f) => /\.(dcm|dicom)$/i.test(f.name || "")).length;
+  box.innerHTML = `<p style="color:var(--muted)">⏳ Procesando archivos… ${done}/${totalN}</p>`;
   for (const f of files) {
     const isDcm = /\.(dcm|dicom)$/i.test(f.name || "");
     if (isDcm && convertDcm) {
@@ -1258,20 +1262,30 @@ async function uploadBatch() {
           const base = (f.webkitRelativePath || f.name).replace(/\.(dcm|dicom)$/i, "");
           fd.append("files", res.blob, `${base}.${ext}`);
           converted++;
+          done++;
+          if (done % 50 === 0 || done === totalN) {
+            box.innerHTML = `<p style="color:var(--muted)">⏳ Convirtiendo DICOM a imágenes… ${done}/${totalN} (${converted} convertidos)</p>`;
+          }
           continue;
         }
       } catch (e) { /* conversión falló: subir DICOM original */ }
     }
-    // con webkitRelativePath conservamos la estructura; el backend agrupa DICOM
     fd.append("files", f, f.webkitRelativePath || f.name);
+    done++;
+    if (done % 100 === 0 || done === totalN) {
+      box.innerHTML = `<p style="color:var(--muted)">⏳ Preparando archivos… ${done}/${totalN}</p>`;
+    }
   }
   _pendingUpload = [];
   list.innerHTML = "";
-  const totalKb = files.reduce((s, f) => s + f.size, 0);
-  box.innerHTML = `<p style="color:var(--muted)">⏳ Subiendo ${files.length} archivo(s) (${(totalKb / 1024).toFixed(1)} MB)… puede tardar varios minutos si los archivos están en la nube.</p>`;
-  // timeout 150s para evitar que el navegador cuelgue sin feedback
+  // estimar tamaño comprimido (DICOM→JPG ≈ 15%, otros ≈ 100%)
+  const uploadBytes = [...fd].reduce((s, pair) => s + (pair[1].size || 0), 0);
+  const uploadMb = (uploadBytes / 1048576).toFixed(1);
+  box.innerHTML = `<p style="color:var(--muted)">⏳ Subiendo ${totalN} archivo(s) (≈ ${uploadMb} MB)${nDcm ? ` · ${nDcm} DICOM convertidos a JPG` : ""}…</p>`;
+  // timeout dinámico: mínimo 180s, hasta 600s para archivos grandes
+  const timeoutSec = Math.min(600, Math.max(180, totalN * 3, Math.round(uploadBytes / 1048576) * 5));
   const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), 150000);
+  const timeoutId = setTimeout(() => controller.abort(), timeoutSec * 1000);
   try {
     const res = await fetch(`/api/person/${state.current}/upload-batch`, {
       method: "POST", body: fd, signal: controller.signal,
@@ -1282,7 +1296,7 @@ async function uploadBatch() {
       box.innerHTML = `<div class="drug-warning sev-border-red"><div class="d-title">Error</div><div>${esc(data.error || "Error al subir")}</div></div>`;
       return;
     }
-    let movedCreated = null;   // {to_pid} cuando se creó paciente por el nombre
+    let movedCreated = null;
     const rows = (data.results || []).map((r) => {
       if (r.status === "moved") {
         if (r.created) movedCreated = r.to_pid;
@@ -1305,7 +1319,6 @@ async function uploadBatch() {
     const summaryHtml = `<div class="drug-warning sev-border-green"><div class="d-title">✅ Subida completa: ${s.uploaded || 0} archivo(s)</div></div>${convNote}${rows}${note}`;
     box.innerHTML = summaryHtml;
     toast(s.uploaded > 0 ? "Subida completa — ⚠️ considere regenerar el informe IA" : "Subida completa (nada nuevo)", s.uploaded > 0 ? "yellow" : "green");
-    // recargar persona (informes nuevos + documentos + aviso)
     state.detail = await api(`/api/person/${state.current}`);
     await loadPersons();
     renderPerson();
@@ -1330,13 +1343,12 @@ async function uploadBatch() {
     clearTimeout(timeoutId);
     if (e.name === "AbortError") {
       box.innerHTML = `<div class="drug-warning sev-border-red"><div class="d-title">⏱ Tiempo de espera agotado</div>
-        <div>La subida tardó demasiado (más de 2:30 min). Posibles causas:<br>
-        • Los archivos están en la nube (Google Drive, OneDrive) y no están sincronizados localmente.
-          <b>Antes de subir, haga clic derecho → "Make available offline"</b> o abra cada archivo primero.<br>
-        • Son muchos archivos grandes. Pruebe <b>comprimir la carpeta en ZIP</b> y subir el ZIP directamente.</div></div>`;
+        <div>La subida tardó demasiado (más de ${timeoutSec}s). Con ${totalN} archivos (≈ ${uploadMb} MB comprimidos) puede demorar varios minutos.<br>
+        • Si los archivos están en la nube, <b>abrí cada archivo o sincronícelos localmente</b> antes de subir.<br>
+        • Pruebe <b>comprimir la carpeta en ZIP</b> y subir el ZIP directamente.</div></div>`;
     } else {
       box.innerHTML = `<div class="drug-warning sev-border-red"><div class="d-title">Error de conexión</div>
-        <div>${esc(e.message || "Error desconocido")}. Verifique su conexión a internet o intente comprimir la carpeta en ZIP y subir el ZIP.</div></div>`;
+        <div>${esc(e.message || "Error desconocido")}. Verifique su conexión o intente comprimir la carpeta en ZIP.</div></div>`;
     }
   } finally {
     _uploadBusy = false;
