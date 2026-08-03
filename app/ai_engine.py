@@ -48,6 +48,10 @@ MODELS = {
 # Modelos de visión permitidos para analizar estudios (imágenes/DICOM/PDFs).
 # SOLO modelos baratos de OpenRouter; nunca Opus u otros caros.
 VISION_MODELS = {
+    "qwen-vl-32b": {
+        "label": "Qwen3 VL 32B",
+        "id": "qwen/qwen3-vl-32b-instruct",
+    },
     "gemini-flash": {
         "label": "Gemini 2.5 Flash (visión)",
         "id": "google/gemini-2.5-flash",
@@ -61,9 +65,9 @@ VISION_MODELS = {
         "id": "qwen/qwen3-vl-8b-instruct",
     },
 }
-VISION_MODEL = os.environ.get("VISION_MODEL", "gemini-flash")
+VISION_MODEL = os.environ.get("VISION_MODEL", "qwen-vl-32b")
 if VISION_MODEL not in VISION_MODELS:
-    VISION_MODEL = "gemini-flash"
+    VISION_MODEL = "qwen-vl-32b"
 
 
 class AIError(Exception):
