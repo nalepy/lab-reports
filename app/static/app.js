@@ -1428,6 +1428,8 @@ async function processStudies() {
     const msg = `Analizados: ${s.analyzed ?? 0} · Errores: ${s.errors ?? 0}`;
     toast((s.errors ? "Proceso con errores: " : "Procesado: ") + msg,
       s.errors ? "red" : "green");
+    // regenerar el informe principal con los hallazgos de imagen
+    if ((s.analyzed ?? 0) > 0) ensureAIReports(pid);
   } catch (e) {
     toast("Error al procesar: " + e.message, "red");
     state.detail = await api(`/api/person/${pid}`);
@@ -1785,9 +1787,10 @@ async function uploadBatch() {
     await loadPersons();
     renderPerson();
     if (totalUploaded > 0) {
-      // analizar automáticamente los estudios subidos y luego regenerar el informe
+      // analizar automáticamente (processStudies regenera el informe principal)
       await processStudies();
-      ensureAIRepos();
+    } else {
+      ensureAIReports();
     }
   } catch (e) {
     await _purgeDir(tmpDir).catch(() => {});

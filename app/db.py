@@ -375,13 +375,17 @@ class DB:
         self.conn.commit()
 
     def newest_data_at(self, pid: int) -> str | None:
-        """Última marca de datos (informe ingerido o documento subido), local."""
+        """Última marca de datos (informe, documento o análisis de imagen)."""
         r = self.conn.execute(
             """SELECT MAX(t) AS m FROM (
                  SELECT ingested_at AS t FROM reports WHERE person_id=?
                  UNION ALL
                  SELECT uploaded_at AS t FROM documents WHERE person_id=?
-               )""", (pid, pid)).fetchone()
+                 UNION ALL
+                 SELECT a.created_at AS t FROM analyses a
+                   JOIN documents d ON d.id = a.document_id
+                   WHERE d.person_id=?
+               )""", (pid, pid, pid)).fetchone()
         return r["m"] if r and r["m"] else None
 
     def close(self):
