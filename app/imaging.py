@@ -146,10 +146,18 @@ def study_to_pngs(path: str, out_dir: str, max_images: int = 3) -> list[str]:
     if os.path.isdir(p):
         if _dicom_files(p):
             return dicom_to_png(p, out_dir, max_images)
-        # carpeta con imágenes sueltas: usar hasta max_images directamente
+        # carpeta con imágenes sueltas (recursivo: puede haber subcarpetas):
+        # elegir representativas — primera, media, última
         imgs = []
-        for f in sorted(os.listdir(p)):
-            if f.lower().endswith((".png", ".jpg", ".jpeg", ".bmp", ".tif", ".tiff", ".webp")):
-                imgs.append(os.path.join(p, f))
-        return imgs[:max_images]
+        for root, _dirs, files in os.walk(p):
+            for f in sorted(files):
+                if f.lower().endswith(
+                        (".png", ".jpg", ".jpeg", ".bmp", ".tif", ".tiff",
+                         ".webp")):
+                    imgs.append(os.path.join(root, f))
+        if not imgs:
+            return []
+        if len(imgs) == 1:
+            return imgs
+        return [imgs[0], imgs[len(imgs) // 2], imgs[-1]][:max_images]
     return [p]
