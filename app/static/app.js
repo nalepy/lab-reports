@@ -1627,14 +1627,7 @@ async function uploadBatch() {
   if (!files.length) { toast("Seleccione o arrastre archivos/carpetas", "yellow"); return; }
   const totalN = files.length;
 
-  // --- PASO 1: confirmar conversión (sin depender de extensión) ---
-  if (totalN > 200 && !confirm(`${totalN} archivo(s). Se va a escanear cada archivo para detectar y convertir DICOM a JPG.\n¿Continuar?\n\n• Los DICOM que no se puedan convertir se omiten (nunca se suben en formato original).\n• Cada archivo se guarda temporalmente y se sube empaquetado en ZIP (el servidor lo descomprime).\n• Las imágenes casi idénticas se descartan automáticamente (se puede desactivar).`)) {
-    _pendingUpload = []; list.innerHTML = "";
-    box.innerHTML = `<div class="drug-warning sev-border-yellow"><div class="d-title">Cancelado</div><div>No se subió nada.</div></div>`;
-    return;
-  }
-
-  // soporte de almacenamiento temporal privado del navegador
+  // --- PASO 1: verificar soporte de almacenamiento temporal privado ---
   if (!navigator.storage || !navigator.storage.getDirectory) {
     _pendingUpload = []; list.innerHTML = "";
     box.innerHTML = `<div class="drug-warning sev-border-red"><div class="d-title">Navegador no compatible</div><div>Este navegador no soporta el almacenamiento temporal local. Use Chrome o Edge actualizado.</div></div>`;
@@ -1718,9 +1711,6 @@ async function uploadBatch() {
   // --- PASO 3: listar lo guardado y confirmar tamaño real ---
   const savedEntries = await _listDir(tmpDir, "");
   const totalUpload = savedEntries.length;
-  let uploadBytes = 0;
-  for (const e of savedEntries) uploadBytes += (await e.handle.getFile()).size;
-  const uploadMb = (uploadBytes / 1048576).toFixed(1);
   if (totalUpload === 0) {
     await _purgeDir(tmpDir).catch(() => {});
     try { await rootDir.removeEntry(tmpName); } catch (e) { /* noop */ }
@@ -1728,19 +1718,6 @@ async function uploadBatch() {
     _uploadBusy = false;
     return;
   }
-  let summary = `${totalUpload} archivo(s) (≈ ${uploadMb} MB)`;
-  if (converted) summary += ` · ${converted} DICOM convertidos a JPG`;
-  if (passthrough) summary += ` · ${passthrough} no-DICOM pasados`;
-  if (deduped) summary += ` · ${deduped} casi-idénticos descartados`;
-  if (skipped) summary += ` · ${skipped} omitidos`;
-  if (totalUpload > 200 && !confirm(`¿Subir ${summary}?\n\n• Se empaqueta en ZIP(s) de ≤90 MB y el servidor los descomprime.\n\n¿Subir ahora?`)) {
-    await _purgeDir(tmpDir).catch(() => {});
-    try { await rootDir.removeEntry(tmpName); } catch (e) { /* noop */ }
-    box.innerHTML = `<div class="drug-warning sev-border-yellow"><div class="d-title">Cancelado</div><div>Se eliminó la carpeta temporal.</div></div>`;
-    _uploadBusy = false;
-    return;
-  }
-
   // --- PASO 4: empaquetar en ZIP(s) y subir (el servidor descomprime) ---
   const MAX_ZIP = 90 * 1048576; // 90 MB por ZIP
   const chunks = [];
@@ -1801,19 +1778,17 @@ async function uploadBatch() {
         ? `<div class="up-result">✅ <b>${esc(r.file)}</b> — ${esc(r.message)}</div>`
         : `<div class="up-result up-err">❌ <b>${esc(r.file)}</b> — ${esc(r.message)}</div>`
     ).join("");
-    const note = (totalUploaded > 0)
-      ? `<div class="drug-warning sev-border-yellow" style="margin-top:10px">
-           <div class="d-title">🆕 ${esc(totalUploaded)} archivo(s) subido(s)</div>
-           <div>⚠️ Considere <strong>regenerar el informe IA</strong> para que incluya la información nueva.</div>
-         </div>`
-      : "";
-    const summaryHtml = `<div class="drug-warning sev-border-green"><div class="d-title">✅ Subida completa: ${esc(totalUploaded)} archivo(s)</div></div>${convNote}${dedupNote}${zipRows}${note}`;
+    const summaryHtml = `<div class="drug-warning sev-border-green"><div class="d-title">✅ Subida completa: ${esc(totalUploaded)} archivo(s)</div></div>${convNote}${dedupNote}${zipRows}`;
     box.innerHTML = summaryHtml;
-    toast(totalUploaded > 0 ? "Subida completa — ⚠️ considere regenerar el informe IA" : "Subida completa (nada nuevo)", totalUploaded > 0 ? "yellow" : "green");
+    toast(totalUploaded > 0 ? "Subida completa — analizando con IA…" : "Subida completa (nada nuevo)", totalUploaded > 0 ? "yellow" : "green");
     state.detail = await api(`/api/person/${state.current}`);
     await loadPersons();
     renderPerson();
-    ensureAIRepos();
+    if (totalUploaded > 0) {
+      // analizar automáticamente los estudios subidos y luego regenerar el informe
+      await processStudies();
+      ensureAIRepos();
+    }
   } catch (e) {
     await _purgeDir(tmpDir).catch(() => {});
     try { await rootDir.removeEntry(tmpName); } catch (e2) { /* noop */ }
