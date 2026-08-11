@@ -328,11 +328,16 @@ function renderPerson() {
 
   <div class="metrics-bar">
     <div class="metrics-title">🩺 Datos vitales e información médica</div>
-    <input id="mBirth" type="date" title="Fecha de nacimiento" value="${esc(p.birth_date || "")}">
-    <input id="mWeight" type="number" step="0.1" min="0" placeholder="Peso (kg)" value="${p.weight_kg ?? ""}">
-    <input id="mHeight" type="number" step="0.1" min="0" placeholder="Talla (cm)" value="${p.height_cm ?? ""}">
-    <input id="mBp" placeholder="Presión arterial (ej. 120/80)" value="${esc(p.bp || "")}">
-    <input id="mHr" type="number" min="0" placeholder="Pulso (bpm)" value="${p.hr ?? ""}">
+    <label class="metric-field"><span>Fecha de nacimiento</span>
+      <input id="mBirth" type="date" value="${esc(p.birth_date || "")}"></label>
+    <label class="metric-field"><span>Peso (kg)</span>
+      <input id="mWeight" type="number" step="0.1" min="0" placeholder="kg" value="${p.weight_kg ?? ""}"></label>
+    <label class="metric-field"><span>Talla (cm)</span>
+      <input id="mHeight" type="number" step="0.1" min="0" placeholder="cm" value="${p.height_cm ?? ""}"></label>
+    <label class="metric-field"><span>Presión arterial</span>
+      <input id="mBp" placeholder="ej. 120/80" value="${esc(p.bp || "")}"></label>
+    <label class="metric-field"><span>Pulso (bpm)</span>
+      <input id="mHr" type="number" min="0" placeholder="bpm" value="${p.hr ?? ""}"></label>
     <button class="btn" onclick="saveMetrics()">💾 Guardar</button>
     <textarea id="mNotes" rows="2" placeholder="Otra información médica importante: alergias, enfermedades crónicas, antecedentes, condiciones no presentes en los informes…">${esc(p.notes || "")}</textarea>
   </div>

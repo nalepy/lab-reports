@@ -1052,6 +1052,15 @@ td .trend-flat { color: var(--muted); }
   border-radius: 8px; font-size: 13px; background: var(--surface);
   min-width: 0; flex: 0 1 150px;
 }
+.metrics-bar .metric-field {
+  display: flex; flex-direction: column; gap: 3px;
+  flex: 0 1 150px; min-width: 0;
+}
+.metrics-bar .metric-field > span {
+  font-size: 10.5px; font-weight: 700; letter-spacing: .03em;
+  text-transform: uppercase; color: var(--ink-2, #3a4350);
+}
+.metrics-bar .metric-field input { flex: none; width: 100%; }
 .metrics-bar input:focus { outline: 2px solid var(--serum, #2e7d32); border-color: transparent; }
 .metrics-bar .btn { flex: none; }
 .metrics-title {
