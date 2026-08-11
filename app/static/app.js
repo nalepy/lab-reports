@@ -1613,8 +1613,8 @@ async function _runUpload(url, boxId, listId, opts) {
 }
 
 async function _runUploadInner(url, boxId, listId, opts) {
-  let box = $(boxId);
-  let list = $(listId);
+  let box = document.getElementById(boxId);
+  let list = document.getElementById(listId);
   const files = _pendingUpload;
   if (!files.length) { toast("Seleccione o arrastre archivos/carpetas", "yellow"); return; }
   // Defensa: si el panel destino no está en el DOM (p. ej. sin paciente
