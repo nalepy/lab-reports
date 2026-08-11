@@ -99,6 +99,19 @@ def _norm_key(s: str) -> str:
     return re.sub(r"[^a-z0-9]+", " ", s.lower()).strip()
 
 
+# líneas de cabecera/pie (teléfono, dirección, correo, firma, paginado…) que
+# aparecen dentro de la banda de resultados en algunos PDFs y NUNCA son análisis.
+_JUNK_ROW_RE = re.compile(
+    r"^(tel[eé]fono|tel\.|direcci[oó]n|cel\.?|celular|correo|e-?mail|fax|"
+    r"whatsapp|ruc|reg\.?\s*prof|registro\s+profesional|p[aá]gina|"
+    r"impreso(\s+por)?|avda\.?|avenida|calle|firma\b)", re.I)
+
+
+def _is_junk_row(name: str) -> bool:
+    """True si el 'nombre' de una fila es en realidad contacto/dirección/pie."""
+    return bool(_JUNK_ROW_RE.match((name or "").strip()))
+
+
 def parse_number(s: str, unit: str = "") -> float | None:
     """Parse a Spanish-locale number (dots/commas) into a float.
 
@@ -592,6 +605,11 @@ def _parse_verdejo_results(doc: fitz.Document, report: Report,
             unit = " ".join(unit_words).strip()
             meth = " ".join(meth_words).strip()
             ref = " ".join(ref_words).strip()
+
+            # descartar contacto/dirección/pie que se cuela en la banda de
+            # resultados (teléfono, dirección, "Impreso por", etc.)
+            if name and _is_junk_row(name):
+                continue
 
             # section header?
             if name and not re.search(r"\d", name) and (name.isupper() or
