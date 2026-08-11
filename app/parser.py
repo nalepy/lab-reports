@@ -546,9 +546,25 @@ def _parse_brunelli(doc: fitz.Document, report: Report):
 
 
 def _parse_verdejo(doc: fitz.Document, report: Report):
-    report.lab = "Verdejo"
+    # 'Verdejo' es la DOCTORA que firma (cabecera), no el laboratorio ni un
+    # análisis: etiqueta neutral para el origen y el nombre real al médico.
+    report.lab = "Laboratorio"
     _parse_verdejo_header(doc, report)
-    _parse_verdejo_results(doc, report)
+    head = clean_text(doc[0].get_text())
+    if not report.doctor or not re.search(r"[A-Za-z]", report.doctor.replace("-", "")):
+        dm = re.search(r"^((?:Dra?\.|Bioq\.|Lic\.|Q\.F\.)[^\n]+)$", head, re.M)
+        if dm:
+            line = re.sub(r"\bReg\.?\s*Prof\.?.*$", "", dm.group(1), flags=re.I)
+            report.doctor = re.sub(r"\s+", " ", line).strip()
+    # empezar a leer resultados DESPUÉS de la fila de encabezado de columnas
+    # (evita que teléfono/dirección de la cabecera se parseen como análisis).
+    start_y = 0.0
+    for y, ws in _page_lines(doc, 0, y_tol=1.0):
+        low = _norm_key(_line_text((y, ws)))
+        if "determinaciones" in low or ("resultados" in low and "unidad" in low):
+            start_y = y + 1.0
+            break
+    _parse_verdejo_results(doc, report, start_y=start_y)
 
 
 def _parse_verdejo_results(doc: fitz.Document, report: Report,

@@ -15,6 +15,7 @@ estándar (ADA, AHA/ACC, AACE, KDIGO, NCEP/ATP III) y se citan como
 tales. El paciente debe consultar siempre con su profesional de salud.
 """
 import re
+import unicodedata
 from datetime import datetime
 
 from .canonical import CATEGORIES
@@ -547,6 +548,21 @@ def std_range_text(key: str, sex: str = "") -> str:
     return " · ".join(parts)
 
 
+def _fallback_key(name: str) -> str:
+    """Clave de reserva para un análisis sin canónico.
+
+    Un análisis que no está en la lista canónica NO se descarta: se agrupa por
+    su nombre normalizado y se muestra igual (con el rango del propio informe).
+    Así cualquier análisis nuevo aparece en tablas/gráficos/hallazgos/IA en vez
+    de perderse silenciosamente.
+    """
+    if not name:
+        return ""
+    s = unicodedata.normalize("NFKD", name).encode("ascii", "ignore").decode("ascii")
+    s = re.sub(r"[^a-z0-9]+", " ", s.lower()).strip()
+    return ("otro:" + re.sub(r"\s+", "_", s)) if s else ""
+
+
 def build_assessment(person: dict, tests: list[dict], meds: list[dict]) -> dict:
     """Construye la evaluación completa de una persona."""
     sex = person.get("sex") or ""
@@ -555,9 +571,12 @@ def build_assessment(person: dict, tests: list[dict], meds: list[dict]) -> dict:
     raw_tests = []
     for t in tests:
         raw_tests.append(t)
-        if not t["canonical"]:
+        # canónico conocido, o clave de reserva por nombre: nunca se pierde un
+        # análisis desconocido (se agrega y se muestra con su propio rango).
+        key = t["canonical"] or _fallback_key(t.get("name"))
+        if not key:
             continue
-        series.setdefault(t["canonical"], []).append(t)
+        series.setdefault(key, []).append(t)
     # ordenar cada serie por fecha
     for k in series:
         series[k].sort(key=lambda x: x["date"] or "")
