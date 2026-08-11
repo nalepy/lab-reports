@@ -1593,6 +1593,10 @@ async function _streamZip(outHandle, entries) {
 }
 
 async function uploadBatch() {
+  if (!state.current) {
+    toast("Seleccione un paciente o use «+ Nuevo estudio»", "yellow");
+    return;
+  }
   return _runUpload(`/api/person/${state.current}/upload-folder`, "uploadResult", "uploadFileList", { patientless: false });
 }
 async function patientlessUpload() {
@@ -1600,10 +1604,27 @@ async function patientlessUpload() {
 }
 
 async function _runUpload(url, boxId, listId, opts) {
-  const box = $(boxId);
-  const list = $(listId);
+  _uploadBusy = true;
+  try {
+    return await _runUploadInner(url, boxId, listId, opts);
+  } finally {
+    _uploadBusy = false;
+  }
+}
+
+async function _runUploadInner(url, boxId, listId, opts) {
+  let box = $(boxId);
+  let list = $(listId);
   const files = _pendingUpload;
   if (!files.length) { toast("Seleccione o arrastre archivos/carpetas", "yellow"); return; }
+  // Defensa: si el panel destino no está en el DOM (p. ej. sin paciente
+  // seleccionado), no crashear en silencio: avisar y abortar.
+  if (!box) {
+    toast("No hay panel de subida visible. Seleccione un paciente o use «+ Nuevo estudio».", "yellow");
+    _pendingUpload = [];
+    return;
+  }
+  if (!list) list = { innerHTML: "" };
   const totalN = files.length;
 
   // --- PASO 1: verificar soporte de almacenamiento temporal privado ---
@@ -1614,7 +1635,6 @@ async function _runUpload(url, boxId, listId, opts) {
   }
 
   // --- PASO 2: convertir y GUARDAR cada archivo a temp (libera RAM) ---
-  _uploadBusy = true;
   const rootDir = await navigator.storage.getDirectory();
   const tmpName = `lab_up_${Date.now()}`;
   let tmpDir;
