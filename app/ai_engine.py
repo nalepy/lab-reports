@@ -21,10 +21,7 @@ _ENV_PATH = os.path.join(os.path.dirname(__file__), "..", "data", ".env")
 
 
 def _load_key() -> str:
-    """Lee la API key fresca por llamada: env var, luego data/.env (editable desde la UI)."""
-    key = os.environ.get("OPENROUTER_API_KEY", "")
-    if key:
-        return key
+    """Fuente única de la API key: data/.env (editable desde la UI)."""
     if os.path.exists(_ENV_PATH):
         try:
             with open(_ENV_PATH, "r", encoding="utf-8") as _f:
@@ -85,7 +82,7 @@ def _call_openrouter(model_id: str, messages: list, temperature=0.4) -> str:
     if not key or "sk-or-v1-" not in key:
         raise AIError(
             "No hay una API key de OpenRouter configurada. Agregue "
-            "OPENROUTER_API_KEY en data/.env o como variable de entorno "
+            "OPENROUTER_API_KEY en data/.env "
             "para usar los modelos de IA.")
     payload = {
         "model": model_id,
@@ -138,7 +135,7 @@ def _call_openrouter_vision(model_id: str, system: str, user_text: str,
     if not key or "sk-or-v1-" not in key:
         raise AIError(
             "No hay una API key de OpenRouter configurada. Agregue "
-            "OPENROUTER_API_KEY en data/.env o como variable de entorno "
+            "OPENROUTER_API_KEY en data/.env "
             "para usar los modelos de IA.")
     content: list = [{"type": "text", "text": user_text}]
     for img in images:

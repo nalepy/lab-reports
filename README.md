@@ -133,9 +133,11 @@ cp data/.env.example data/.env
 # OPENROUTER_API_KEY=sk-or-v1-...
 ```
 
-También puede definir la variable de entorno `OPENROUTER_API_KEY`. Si no hay
-key válida, el informe IA cae automáticamente a un **informe local
-estructurado** (sin conexión) y la interfaz avisa del motivo.
+También se puede guardar desde la interfaz: **Configuración → IA (OpenRouter) →
+Guardar API key** (escribe en `data/.env`; no requiere reiniciar). `data/.env`
+es la única fuente de la key. Si no hay key válida, el informe IA cae
+automáticamente a un **informe local estructurado** (sin conexión) y la
+interfaz avisa del motivo.
 
 ## Estructura
 

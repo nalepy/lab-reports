@@ -1264,9 +1264,9 @@ def api_change_password(current: str = Form(...), new: str = Form(...)):
 @app.get("/api/settings")
 def api_get_settings():
     """Estado de la API key de OpenRouter (nunca devuelve la key completa)."""
-    key_set = bool(os.environ.get("OPENROUTER_API_KEY", ""))
+    key_set = False
     env_path = DATA_DIR / ".env"
-    if not key_set and env_path.exists():
+    if env_path.exists():
         try:
             for line in env_path.read_text(encoding="utf-8").splitlines():
                 if line.strip().startswith("OPENROUTER_API_KEY="):
@@ -1274,7 +1274,7 @@ def api_get_settings():
                     break
         except OSError:
             pass
-    return {"openrouter_key_set": bool(key_set)}
+    return {"openrouter_key_set": key_set}
 
 
 @app.post("/api/settings")
