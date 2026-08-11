@@ -150,11 +150,19 @@
       <button type="submit">Cambiar contraseña</button>
     </form>
     <div id="settingsMsg"></div>
+    <hr>
+    <h4>🤖 IA (OpenRouter)</h4>
+    <div id="keyStatus"></div>
+    <form onsubmit="return saveOpenRouterKey(event)">
+      <input type="password" id="openrouterKey" placeholder="sk-or-v1-..." autocomplete="new-password">
+      <button type="submit">Guardar API key</button>
+    </form>
+    <div id="keyMsg"></div>
     <button class="btn-link" onclick="doLogout()">🔒 Cerrar sesión</button>
     <button class="btn-link" onclick="toggleSettings()">Cerrar</button>
   </div>
 </div>
 
-<script src="/static/app.js?v=20260805k"></script>
+<script src="/static/app.js?v=20260811a"></script>
 </body>
 </html>

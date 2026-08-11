@@ -1782,6 +1782,41 @@ async function fetchDicomLibrary(ev) {
 function toggleSettings() {
   const p = $("#settingsPanel");
   p.style.display = p.style.display === "block" ? "none" : "block";
+  if (p.style.display === "block") {
+    fetch("/api/settings")
+      .then((r) => r.json())
+      .then((d) => {
+        const note = $("#keyStatus");
+        if (note) {
+          note.innerHTML = d.openrouter_key_set
+            ? `<span style="color:#2e7d32">✓ API key configurada</span>`
+            : `<span style="color:#d32f2f">✗ Sin API key — los informes IA fallarán</span>`;
+        }
+      })
+      .catch(() => {});
+  }
+}
+
+async function saveOpenRouterKey(ev) {
+  ev.preventDefault();
+  const key = $("#openrouterKey").value.trim();
+  const msg = $("#keyMsg");
+  if (!key) { msg.innerHTML = `<span style="color:#d32f2f">Ingrese una API key.</span>`; return false; }
+  const fd = new FormData();
+  fd.append("key", key);
+  try {
+    const res = await fetch("/api/settings", { method: "POST", body: fd });
+    if (res.status === 401) { window.location.href = "/login"; return false; }
+    const d = await res.json();
+    if (!res.ok) { msg.innerHTML = `<span style="color:#d32f2f">${esc(d.error)}</span>`; return false; }
+    $("#openrouterKey").value = "";
+    msg.innerHTML = `<span style="color:#2e7d32">✓ ${esc(d.message)}</span>`;
+    $("#keyStatus").innerHTML = `<span style="color:#2e7d32">✓ API key configurada</span>`;
+    setTimeout(() => { msg.innerHTML = ""; }, 3000);
+  } catch (e) {
+    msg.innerHTML = `<span style="color:#d32f2f">Error: ${esc(e.message)}</span>`;
+  }
+  return false;
 }
 
 async function changePassword(ev) {

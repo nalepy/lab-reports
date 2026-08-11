@@ -17,20 +17,26 @@ import urllib.request
 import urllib.error
 from datetime import datetime
 
-OPENROUTER_KEY = os.environ.get("OPENROUTER_API_KEY", "")
-# Si no hay variable de entorno, intentar leer data/.env
-if not OPENROUTER_KEY:
-    _env_path = os.path.join(os.path.dirname(__file__), "..", "data", ".env")
-    if os.path.exists(_env_path):
+_ENV_PATH = os.path.join(os.path.dirname(__file__), "..", "data", ".env")
+
+
+def _load_key() -> str:
+    """Lee la API key fresca por llamada: env var, luego data/.env (editable desde la UI)."""
+    key = os.environ.get("OPENROUTER_API_KEY", "")
+    if key:
+        return key
+    if os.path.exists(_ENV_PATH):
         try:
-            with open(_env_path, "r", encoding="utf-8") as _f:
+            with open(_ENV_PATH, "r", encoding="utf-8") as _f:
                 for _line in _f:
                     _line = _line.strip()
                     if _line.startswith("OPENROUTER_API_KEY="):
-                        OPENROUTER_KEY = _line.split("=", 1)[1].strip().strip('"')
-                        break
+                        return _line.split("=", 1)[1].strip().strip('"')
         except OSError:
             pass
+    return ""
+
+
 OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions"
 
 # modelos seleccionables por el usuario (solo estos dos)
@@ -75,7 +81,8 @@ class AIError(Exception):
 
 
 def _call_openrouter(model_id: str, messages: list, temperature=0.4) -> str:
-    if not OPENROUTER_KEY or "sk-or-v1-" not in OPENROUTER_KEY:
+    key = _load_key()
+    if not key or "sk-or-v1-" not in key:
         raise AIError(
             "No hay una API key de OpenRouter configurada. Agregue "
             "OPENROUTER_API_KEY en data/.env o como variable de entorno "
@@ -90,7 +97,7 @@ def _call_openrouter(model_id: str, messages: list, temperature=0.4) -> str:
         OPENROUTER_URL,
         data=json.dumps(payload).encode("utf-8"),
         headers={
-            "Authorization": f"Bearer {OPENROUTER_KEY}",
+            "Authorization": f"Bearer {key}",
             "Content-Type": "application/json",
             "HTTP-Referer": "http://localhost:8000",
             "X-Title": "Panel de Laboratorio Clinico",
@@ -127,7 +134,8 @@ def _img_data_url(path: str) -> str:
 
 def _call_openrouter_vision(model_id: str, system: str, user_text: str,
                             images: list, temperature=0.2) -> str:
-    if not OPENROUTER_KEY or "sk-or-v1-" not in OPENROUTER_KEY:
+    key = _load_key()
+    if not key or "sk-or-v1-" not in key:
         raise AIError(
             "No hay una API key de OpenRouter configurada. Agregue "
             "OPENROUTER_API_KEY en data/.env o como variable de entorno "
@@ -148,7 +156,7 @@ def _call_openrouter_vision(model_id: str, system: str, user_text: str,
         OPENROUTER_URL,
         data=json.dumps(payload).encode("utf-8"),
         headers={
-            "Authorization": f"Bearer {OPENROUTER_KEY}",
+            "Authorization": f"Bearer {key}",
             "Content-Type": "application/json",
             "HTTP-Referer": "http://localhost:8000",
             "X-Title": "Panel de Laboratorio Clinico",
