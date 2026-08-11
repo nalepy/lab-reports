@@ -696,25 +696,17 @@ class DB:
         new_count = 0
         person_ids: set[int] = set()
         created_any = False
-        pending: list[dict] = []
         for r in reports:
             if not r.patient_name:
                 continue
             key = sha + f"|{r.lab}|{r.date}"
             if self.report_exists(file_hash=key):
                 continue
-            # dedupe by same person+date+lab (e.g. ORD61211 vs 61211)
-            p = self._match_person(r)
-            if p is None:
-                # paciente desconocido: NO crear todavía — pedir confirmación
-                self._save_pending(key, fname, stored_rel, r, size, study_date)
-                pending.append({
-                    "key": key, "file": fname, "patient": r.patient_name,
-                    "doc": r.doc or "", "lab": r.lab, "date": r.date,
-                })
-                continue
-            self._merge_person_meta(p, r)
-            pid = p["id"]
+            # paciente: matchear por doc/nombre; si no existe se CREA
+            # automáticamente (nunca mezclar estudios de pacientes distintos)
+            pid, created = self._get_or_create_person2(r)
+            if created:
+                created_any = True
             person_ids.add(pid)
             dup_report = self.conn.execute(
                 "SELECT id FROM reports WHERE person_id=? AND date=? AND lab=?",
@@ -727,12 +719,6 @@ class DB:
                                      r.is_document, r.sections)
             new_count += 1
         self.conn.commit()
-        if pending:
-            # los informes confirmados de este archivo ya quedaron; el resto
-            # espera decisión del usuario (no se registra el archivo aún)
-            return {"ok": True, "file": fname, "status": "pending",
-                    "pending": pending, "new_reports": new_count,
-                    "study_date": study_date}
         self._upsert_file(path, sha, size, mtime)
         # Vincular también como documento adjunto descargable (pestaña del
         # paciente). La vía de subida web ya lo hace; la ingesta directa

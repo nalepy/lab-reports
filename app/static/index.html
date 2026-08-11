@@ -57,6 +57,34 @@
   </div>
 </div>
 
+<div class="modal-overlay" id="newStudyModal" style="display:none">
+  <div class="settings-card">
+    <h3>🩺 Nuevo estudio</h3>
+    <p style="margin:0 0 10px;color:var(--muted)">Suba archivos <b>sin elegir paciente</b>. Si es un PDF de
+      laboratorio, el sistema detecta al paciente (y lo <b>crea</b> si no existe).
+      Los adjuntos se asignan al paciente del PDF.</p>
+    <div class="upload-zone">
+      <div class="upload-drop" id="studyDrop"
+           onclick="document.getElementById('studyFiles').click()"
+           ondragover="ev.preventDefault(); this.classList.add('drag')"
+           ondragleave="this.classList.remove('drag')"
+           ondrop="onStudyDrop(event)">
+        <span class="upload-icon">📁</span>
+        <span><strong>Arrastre PDF/archivos aquí</strong><br>o haga clic para elegir</span>
+      </div>
+      <div class="upload-actions-row">
+        <button type="button" class="btn" onclick="document.getElementById('studyFiles').click()">📄 Elegir archivos</button>
+      </div>
+      <input type="file" id="studyFiles" class="upload-input" multiple
+             accept=".pdf,.jpg,.jpeg,.png,.gif,.webp,.bmp,.tif,.tiff,.dcm,.dicom,.zip,.doc,.docx,.txt,.csv"
+             onchange="onStudyPicked()">
+      <div id="studyFileList" class="upload-files"></div>
+    </div>
+    <div id="studyResult"></div>
+    <button class="btn-link" onclick="closeNewStudy()">Cerrar</button>
+  </div>
+</div>
+
 <div class="modal-overlay" id="pendingModal" style="display:none">
   <div class="settings-card">
     <h3>🤔 Paciente no reconocido</h3>
@@ -163,6 +191,6 @@
   </div>
 </div>
 
-<script src="/static/app.js?v=20260811a"></script>
+<script src="/static/app.js?v=20260811b"></script>
 </body>
 </html>

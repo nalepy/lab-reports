@@ -23,6 +23,8 @@ from fastapi.responses import FileResponse, JSONResponse, Response
 from pydantic import BaseModel
 import json
 import re
+import shutil
+import zipfile
 
 from .db import DB
 from .assessment import build_assessment
@@ -887,39 +889,18 @@ async def resolve_pending(pid: int, body: PendingResolveIn):
 
 # ------------------------------------------------------------------ carpeta DICOM / zip
 
-import zipfile
 
+def _extract_upload_files(files: list[UploadFile], group_dir: Path) -> dict:
+    """Guarda los archivos recibidos (rutas seguras, sin traversal) en group_dir.
 
-@app.post("/api/person/{pid}/upload-folder")
-async def upload_folder(pid: int, files: list[UploadFile] = File(...),
-                        notes: str = Form("")):
-    """Sube una carpeta completa de estudios (DICOM u otros), preservando
-    subcarpetas. El navegador envía cada archivo con su ruta relativa
-    (webkitRelativePath) en 'path'.
-
-    También acepta un único ZIP con la estructura interna (DICOMDIR, series,
-    subcarpetas) que se descomprime y archiva.
+    Descomprime ZIPs (preservando subcarpetas) y descarta software/binarios y
+    DICOM en bruto. Devuelve {'saved', 'skipped'}.
     """
-    if not files:
-        return JSONResponse({"error": "No se recibieron archivos."},
-                            status_code=400)
-    p = db.person(pid)
-    if not p:
-        return JSONResponse({"error": "Persona no encontrada"}, status_code=404)
-
-    group_id = f"{int(time.time())}_{pid}"
-    group_dir = UPLOAD_DIR / f"grupo_{group_id}"
-    group_dir.mkdir(parents=True, exist_ok=True)
     saved = 0
-    dcm_count = 0
     skipped = 0
-
     for f in files:
         rel = f.filename or ""
-        # normalizar y eliminar path traversal
         rel = rel.replace("\\", "/").lstrip("/")
-        # proteger contra rutas absolutas de Windows (C:/..., C:Windows...)
-        # y Unix (//etc/passwd)
         if re.match(r"^[A-Za-z]:", rel):
             rel = rel[2:].lstrip("/")
         parts = [x for x in rel.split("/")
@@ -945,7 +926,7 @@ async def upload_folder(pid: int, files: list[UploadFile] = File(...),
             skipped += 1
             continue
         try:
-            data = await f.read()
+            data = f.file.read()
             if _is_unsafe_ext(rel) or dest.suffix.lower() in (".dcm", ".dicom") or _is_dicom_bytes(data):
                 # software/binarios o DICOM en bruto nunca se guardan
                 skipped += 1
@@ -956,45 +937,184 @@ async def upload_folder(pid: int, files: list[UploadFile] = File(...),
         except Exception:  # noqa: BLE001
             skipped += 1
 
-    # si fue un ZIP, descomprimir en el grupo
-    if saved == 1 and dcm_count == 0:
-        zips = list(group_dir.glob("*.zip")) + list(group_dir.glob("*.ZIP"))
-        if zips:
-            zf = zips[0]
-            try:
-                with zipfile.ZipFile(zf) as z:
-                    for m in z.namelist():
-                        safe = os.path.basename(m) if "/" not in m else m
-                        target = group_dir / safe
-                        target.parent.mkdir(parents=True, exist_ok=True)
-                        if not m.endswith("/"):
-                            data = z.read(m)
-                            if _is_unsafe_ext(m) or target.suffix.lower() in (".dcm", ".dicom") or _is_dicom_bytes(data):
-                                # software/binarios o DICOM en bruto nunca se guardan (ni por ZIP)
-                                continue
-                            with open(target, "wb") as out:
-                                out.write(data)
-                zf.unlink()
-                saved = len(list(group_dir.rglob("*"))) - 1
-            except zipfile.BadZipFile:
-                pass
+    # descomprimir ZIP(s) en el grupo
+    for zf in list(group_dir.glob("*.zip")) + list(group_dir.glob("*.ZIP")):
+        try:
+            with zipfile.ZipFile(zf) as z:
+                for m in z.namelist():
+                    if m.endswith("/"):
+                        continue
+                    safe = os.path.basename(m) if "/" not in m else m
+                    target = group_dir / safe
+                    target.parent.mkdir(parents=True, exist_ok=True)
+                    data = z.read(m)
+                    if _is_unsafe_ext(m) or target.suffix.lower() in (".dcm", ".dicom") or _is_dicom_bytes(data):
+                        # software/binarios o DICOM en bruto nunca se guardan (ni por ZIP)
+                        skipped += 1
+                        continue
+                    with open(target, "wb") as out:
+                        out.write(data)
+                    saved += 1
+            zf.unlink()
+            saved -= 1  # el zip ya no cuenta como adjunto
+        except (zipfile.BadZipFile, OSError, ValueError):
+            # zip inválido: el archivo queda como adjunto sin descomprimir
+            pass
+    return {"saved": saved, "skipped": skipped}
 
-    if saved == 0:
-        import shutil
+
+def _ingest_group_pdfs(group_dir: Path, tab_pid: int) -> tuple:
+    """Ingiere los PDFs de laboratorio del grupo como informes.
+
+    Cada PDF se asigna al paciente que detecta el propio informe (creando el
+    paciente si no existe) — nunca se mezclan estudios de pacientes distintos.
+
+    Devuelve (patients, ingested, registered):
+      - patients: {pid: {pid, name, created, new_reports}}
+      - ingested: nº total de informes nuevos ingeridos
+      - registered: set de PDFs ya registrados como informe (para no incluirlos
+        dos veces en la carpeta de adjuntos)
+    """
+    patients: dict[int, dict] = {}
+    ingested = 0
+    registered: set = set()
+    pdfs = sorted(list(group_dir.rglob("*.pdf")) + list(group_dir.rglob("*.PDF")))
+    for pdf in pdfs:
+        try:
+            res = db.ingest(str(pdf), force=False, library_dir=str(LIBRARY_DIR))
+        except Exception:  # noqa: BLE001 — PDF no parseable → adjunto
+            res = {}
+        st = res.get("status")
+        n = int(res.get("new_reports") or 0)
+        actual = res.get("person_id")
+        if n > 0 and actual:
+            pt = patients.setdefault(actual, {
+                "pid": actual,
+                "name": res.get("person_name") or f"#{actual}",
+                "created": bool(res.get("created")),
+                "new_reports": 0,
+            })
+            pt["new_reports"] += n
+            ingested += n
+            registered.add(pdf)
+        elif st in ("duplicate", "unchanged"):
+            # contenido/ruta ya registrado: no repetir como adjunto
+            registered.add(pdf)
+        # "unparsed" / "no_new": queda como adjunto del paciente de la pestaña
+    return patients, ingested, registered
+
+
+def _folder_message(patients: dict, remaining: int) -> str:
+    parts = []
+    for pt in patients.values():
+        parts.append(f"{pt['name']}: {pt['new_reports']} informe(s)"
+                     f"{' (nuevo paciente)' if pt['created'] else ''}")
+    if remaining:
+        parts.append(f"{remaining} adjunto(s)")
+    return " · ".join(parts) or "archivos guardados"
+
+
+@app.post("/api/person/{pid}/upload-folder")
+async def upload_folder(pid: int, files: list[UploadFile] = File(...),
+                        notes: str = Form("")):
+    """Sube una carpeta completa de estudios (DICOM u otros), preservando
+    subcarpetas. El navegador envía cada archivo con su ruta relativa
+    (webkitRelativePath) en 'path'.
+
+    También acepta un único ZIP con la estructura interna (DICOMDIR, series,
+    subcarpetas) que se descomprime y archiva.
+
+    Los PDFs de laboratorio se INGIEREN como informes y se asignan al paciente
+    que detecta el propio PDF (creándolo si no existe). Si el informe pertenece
+    a OTRO paciente distinto al de la pestaña, los estudios van a ese paciente
+    (nunca se mezclan).
+    """
+    if not files:
+        return JSONResponse({"error": "No se recibieron archivos."},
+                            status_code=400)
+    p = db.person(pid)
+    if not p:
+        return JSONResponse({"error": "Persona no encontrada"}, status_code=404)
+
+    group_id = f"{int(time.time())}_{pid}"
+    group_dir = UPLOAD_DIR / f"grupo_{group_id}"
+    group_dir.mkdir(parents=True, exist_ok=True)
+    extract = _extract_upload_files(files, group_dir)
+    if extract["saved"] == 0:
         shutil.rmtree(group_dir, ignore_errors=True)
         return JSONResponse({"error": "No se pudo guardar ningún archivo."},
                             status_code=500)
 
-    # registrar como documento "carpeta" (el documento apunta al directorio)
-    kind = "dicom_folder" if dcm_count else "folder"
-    doc_id = db.add_document(
-        pid, f"Carpeta {group_id}" + (f" ({dcm_count} DICOM)" if dcm_count else ""),
-        str(group_dir), kind, saved,
-        notes or f"Carpeta de estudio: {saved} archivo(s), {dcm_count} DICOM.")
+    patients, ingested, registered = _ingest_group_pdfs(group_dir, pid)
+
+    # destino de los adjuntos (no-PDF / PDF no parseables): si todo el lote
+    # pertenece a un único OTRO paciente, los adjuntos van a ese paciente
+    attach_pid = pid
+    if patients and pid not in patients and len(patients) == 1:
+        attach_pid = next(iter(patients))
+
+    remaining = [f for f in group_dir.rglob("*")
+                 if f.is_file() and f not in registered]
+    doc_id = None
+    if remaining:
+        doc_id = db.add_document(
+            attach_pid, f"Carpeta {group_id}", str(group_dir), "folder",
+            len(remaining), notes or f"Carpeta de estudio: {len(remaining)} archivo(s).")
+
     return {"ok": True, "status": "folder",
-            "message": f"Carpeta guardada: {saved} archivo(s), {dcm_count} DICOM.",
-            "file": f"Carpeta {group_id}", "document_id": doc_id,
-            "files": saved, "dicom": dcm_count}
+            "message": _folder_message(patients, len(remaining)),
+            "files": extract["saved"], "dicom": 0,
+            "document_id": doc_id, "patients": list(patients.values()),
+            "ingested": ingested, "attach_pid": attach_pid,
+            "moved_to": patients[attach_pid] if attach_pid != pid else None}
+
+
+@app.post("/api/studios/upload-folder")
+async def studios_upload_folder(files: list[UploadFile] = File(...),
+                                notes: str = Form("")):
+    """Sube estudios SIN elegir paciente (botón "Nuevo estudio").
+
+    El PDF de laboratorio identifica al paciente (y lo CREA si no existe). Los
+    adjuntos (imágenes, PDFs no parseables) se asignan al paciente detectado.
+    Sin ningún PDF no se puede determinar el paciente → error.
+    """
+    if not files:
+        return JSONResponse({"error": "No se recibieron archivos."},
+                            status_code=400)
+
+    group_id = f"{int(time.time())}_new"
+    group_dir = UPLOAD_DIR / f"grupo_{group_id}"
+    group_dir.mkdir(parents=True, exist_ok=True)
+    extract = _extract_upload_files(files, group_dir)
+    if extract["saved"] == 0:
+        shutil.rmtree(group_dir, ignore_errors=True)
+        return JSONResponse({"error": "No se pudo guardar ningún archivo."},
+                            status_code=500)
+
+    patients, ingested, registered = _ingest_group_pdfs(group_dir, tab_pid=None)
+
+    remaining = [f for f in group_dir.rglob("*")
+                 if f.is_file() and f not in registered]
+    if not patients:
+        shutil.rmtree(group_dir, ignore_errors=True)
+        return JSONResponse(
+            {"error": "No se detectó un informe de laboratorio (PDF) para "
+                      "identificar al paciente. Seleccione un paciente o suba "
+                      "un PDF de laboratorio."},
+            status_code=400)
+
+    attach_pid = next(iter(patients)) if len(patients) == 1 else None
+    doc_id = None
+    if remaining and attach_pid is not None:
+        doc_id = db.add_document(
+            attach_pid, f"Carpeta {group_id}", str(group_dir), "folder",
+            len(remaining), notes or f"Carpeta de estudio: {len(remaining)} archivo(s).")
+
+    return {"ok": True, "status": "folder",
+            "message": _folder_message(patients, len(remaining)),
+            "files": extract["saved"], "dicom": 0,
+            "document_id": doc_id, "patients": list(patients.values()),
+            "ingested": ingested, "attach_pid": attach_pid}
 
 
 @app.get("/api/documents/{doc_id}/list")
@@ -1055,7 +1175,6 @@ def document_zip(doc_id: int):
     if not os.path.isdir(root):
         return JSONResponse({"error": "No es una carpeta"}, status_code=404)
     import io
-    import zipfile
     buf = io.BytesIO()
     with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as z:
         for dirpath, dirnames, filenames in os.walk(root):

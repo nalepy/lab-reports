@@ -86,7 +86,10 @@ async function loadPersons() {
 
 function renderPersonList() {
   const el = $("#personList");
-  const addBtn = `<div class="person-add"><button class="btn-add" onclick="openNewPatient()">+ Nuevo paciente</button></div>`;
+  const addBtn = `<div class="person-add">
+    <button class="btn-add" onclick="openNewPatient()">+ Nuevo paciente</button>
+    <button class="btn-add" style="margin-top:6px" onclick="openNewStudy()" title="Subir un estudio sin elegir paciente (se detecta/crea solo)">+ Nuevo estudio</button>
+  </div>`;
   if (!state.persons.length) {
     el.innerHTML = `<h3>Personas</h3>${addBtn}<div style="padding:12px;color:#888">Sin pacientes aún. Agregue uno o suba estudios.</div>`;
     return;
@@ -114,6 +117,34 @@ function openNewPatient() {
 function closeNewPatient() {
   $("#newPatientModal").style.display = "none";
   $("#newPatientMsg").innerHTML = "";
+}
+
+/* ---------------- nuevo estudio (sin elegir paciente) ---------------- */
+
+function openNewStudy() {
+  $("#newStudyModal").style.display = "flex";
+  $("#studyFileList").innerHTML = "";
+  const box = $("#studyResult");
+  if (box) box.innerHTML = "";
+  $("#studyFiles").value = "";
+  $("#studyDrop").classList.remove("drag");
+}
+function closeNewStudy() {
+  $("#newStudyModal").style.display = "none";
+}
+function onStudyPicked() {
+  const input = $("#studyFiles");
+  _pendingUpload = Array.from(input.files || []);
+  if (_uploadBusy) { toast("Ya se está subiendo…", "yellow"); return; }
+  patientlessUpload();
+}
+function onStudyDrop(ev) {
+  ev.preventDefault();
+  const drop = $("#studyDrop");
+  if (drop) drop.classList.remove("drag");
+  _pendingUpload = Array.from(ev.dataTransfer.files || []);
+  if (_uploadBusy) { toast("Ya se está subiendo…", "yellow"); return; }
+  patientlessUpload();
 }
 
 async function createPatient(ev) {
@@ -1562,8 +1593,15 @@ async function _streamZip(outHandle, entries) {
 }
 
 async function uploadBatch() {
-  const box = $("#uploadResult");
-  const list = $("#uploadFileList");
+  return _runUpload(`/api/person/${state.current}/upload-folder`, "uploadResult", "uploadFileList", { patientless: false });
+}
+async function patientlessUpload() {
+  return _runUpload("/api/studios/upload-folder", "studyResult", "studyFileList", { patientless: true });
+}
+
+async function _runUpload(url, boxId, listId, opts) {
+  const box = $(boxId);
+  const list = $(listId);
   const files = _pendingUpload;
   if (!files.length) { toast("Seleccione o arrastre archivos/carpetas", "yellow"); return; }
   const totalN = files.length;
@@ -1674,6 +1712,8 @@ async function uploadBatch() {
 
   let totalUploaded = 0;
   const rows = [];
+  let patientsAll = [];
+  let movedTo = null;
   try {
     for (let i = 0; i < chunks.length; i++) {
       const zipName = chunks.length > 1 ? `estudio_${tmpName}_parte${i + 1}.zip` : `estudio_${tmpName}.zip`;
@@ -1686,7 +1726,7 @@ async function uploadBatch() {
       const timeoutId = setTimeout(() => controller.abort(), timeoutSec * 1000);
       let res;
       try {
-        res = await fetch(`/api/person/${state.current}/upload-folder`, {
+        res = await fetch(url, {
           method: "POST",
           body: (() => { const fd = new FormData(); fd.append("files", zipFile, zipName); return fd; })(),
           signal: controller.signal,
@@ -1701,6 +1741,8 @@ async function uploadBatch() {
       }
       const n = data.files || 0;
       totalUploaded += n;
+      if (data.patients) patientsAll.push(...data.patients);
+      if (data.moved_to) movedTo = data.moved_to;
       rows.push({ ok: true, file: zipName, message: data.message || `${n} archivos`, n });
     }
 
@@ -1708,6 +1750,10 @@ async function uploadBatch() {
     await _purgeDir(tmpDir).catch(() => {});
     try { await rootDir.removeEntry(tmpName); } catch (e) { /* noop */ }
 
+    const dedupPatients = [...new Map(patientsAll.map(p => [p.pid, p])).values()];
+    const patientNote = dedupPatients.length
+      ? `<div class="up-result">👤 ${dedupPatients.map(p => `${esc(p.name)}${p.created ? " (nuevo)" : ""}: ${p.new_reports} informe(s)`).join(" · ")}</div>`
+      : "";
     const convNote = converted
       ? `<div class="up-result">🖼️ ${converted} DICOM convertido(s) a ${converted > 1 ? "imágenes/video" : "imagen/video"}</div>`
       : "";
@@ -1719,16 +1765,41 @@ async function uploadBatch() {
         ? `<div class="up-result">✅ <b>${esc(r.file)}</b> — ${esc(r.message)}</div>`
         : `<div class="up-result up-err">❌ <b>${esc(r.file)}</b> — ${esc(r.message)}</div>`
     ).join("");
-    const summaryHtml = `<div class="drug-warning sev-border-green"><div class="d-title">✅ Subida completa: ${esc(totalUploaded)} archivo(s)</div></div>${convNote}${dedupNote}${zipRows}`;
+    const summaryHtml = `<div class="drug-warning sev-border-green"><div class="d-title">✅ Subida completa: ${esc(totalUploaded)} archivo(s)</div></div>${patientNote}${convNote}${dedupNote}${zipRows}`;
     box.innerHTML = summaryHtml;
-    toast(totalUploaded > 0 ? "Subida completa — tablas actualizadas" : "Subida completa (nada nuevo)",
-      totalUploaded > 0 ? "green" : "green");
-    state.detail = await api(`/api/person/${state.current}`);
-    await loadPersons();
-    renderPerson();
-    // PDFs de lab ya se parsearon en el servidor (tablas/gráficos al instante).
-    // Análisis de imagen + informe IA: aviso amarillo / botón AI update / idle 3 min.
-    if (totalUploaded > 0) markAIDirty(state.current);
+
+    // Navegar al paciente correcto: creado automáticamente, detectado por un
+    // PDF de OTRO paciente, o distinto al de la pestaña. Nunca se mezclan
+    // estudios de pacientes distintos.
+    const me = state.current;
+    let navPid = null;
+    if (dedupPatients.length) {
+      if (opts.patientless) {
+        navPid = dedupPatients[0].pid;
+      } else if (movedTo) {
+        navPid = movedTo.pid;
+      } else if (dedupPatients.length === 1 && dedupPatients[0].pid !== me) {
+        navPid = dedupPatients[0].pid;
+      }
+      dedupPatients.forEach(p => markAIDirty(p.pid));
+    }
+    if (navPid) {
+      if (opts.patientless) closeNewStudy();
+      await loadPersons();
+      if (navPid !== state.current) await selectPerson(navPid);
+      switchTab("estudios");
+      toast(dedupPatients.length
+        ? `Estudios asignados a ${dedupPatients.map(p => p.name).join(", ")}${dedupPatients.some(p => p.created) ? " (nuevo paciente)" : ""}`
+        : "Subida completa", "green");
+    } else {
+      toast(totalUploaded > 0 ? "Subida completa — tablas actualizadas" : "Subida completa (nada nuevo)", "green");
+      if (state.current) {
+        state.detail = await api(`/api/person/${state.current}`);
+        renderPerson();
+        // Análisis de imagen + informe IA: aviso amarillo / botón AI update.
+        if (totalUploaded > 0) markAIDirty(state.current);
+      }
+    }
   } catch (e) {
     await _purgeDir(tmpDir).catch(() => {});
     try { await rootDir.removeEntry(tmpName); } catch (e2) { /* noop */ }
