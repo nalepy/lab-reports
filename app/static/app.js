@@ -8,6 +8,7 @@ const state = {
   charts: {},
   medAutocomplete: [],
   aiReportExists: false,   // hay informe IA guardado/renderizado
+  aiModelKey: "deepseek",  // modelo IA elegido por el usuario (persiste entre renders)
   _tab: "resumen",
   aiDirtyPids: new Set(),  // pacientes con datos nuevos pendientes de informe IA
   aiUpdating: false,
@@ -364,17 +365,19 @@ function renderPerson() {
                 title="Descargar el informe completo en un solo PDF">⬇️ PDF completo</button>
       </div>
       <div class="card-body">
-        <div class="med-form">
+        <div class="med-form" style="display:flex;align-items:center;gap:12px;flex-wrap:wrap">
           <label style="display:flex;align-items:center;gap:6px;font-weight:600">
             Modelo de IA:
-            <select id="aiModel" style="padding:8px;border:1px solid var(--border);border-radius:6px">
-              <option value="deepseek">DeepSeek V4 Pro</option>
-              <option value="opus">Opus 4.8</option>
+            <select id="aiModel" onchange="onAIModelChange()" style="padding:8px;border:1px solid var(--border);border-radius:6px">
+              <option value="deepseek"${state.aiModelKey === "deepseek" ? " selected" : ""}>DeepSeek V4 Pro</option>
+              <option value="opus"${state.aiModelKey === "opus" ? " selected" : ""}>Opus 4.8</option>
             </select>
           </label>
+          <button type="button" class="btn" id="aiRegenBtn" onclick="regenAIReport()"
+                  title="Regenerar el informe con el modelo seleccionado">🔄 Regenerar informe</button>
         </div>
-        <div class="med-hint">Use el botón fijo <strong>AI update</strong> (derecha) para generar o
-        actualizar el informe y el análisis de estudios. Preferencia de modelo arriba.</div>
+        <div class="med-hint">Elija el modelo y pulse <strong>Regenerar informe</strong> para generarlo
+        con ese modelo. El botón fijo <strong>AI update</strong> (derecha) refresca automáticamente con DeepSeek.</div>
         <div id="aiResult" style="margin-top:12px"></div>
       </div>
     </div>
@@ -1044,8 +1047,58 @@ function rangeMeter(m) {
 
 /* ---------------- IA ---------------- */
 
+function currentAIModel() {
+  const sel = $("#aiModel");
+  return sel ? sel.value : state.aiModelKey || "deepseek";
+}
+
+/** El usuario cambió el modelo: recordar preferencia y cargar el informe de ese modelo. */
+function onAIModelChange() {
+  state.aiModelKey = currentAIModel();
+  autoLoadAIReport();
+}
+
+/** Fuerza la regeneración del informe con el modelo seleccionado (botón Regenerar). */
+async function regenAIReport() {
+  if (!state.current) return;
+  const model = currentAIModel();
+  state.aiModelKey = model;
+  const box = $("#aiResult");
+  const btn = $("#aiRegenBtn");
+  if (btn) { btn.disabled = true; btn.textContent = "⏳ Generando…"; }
+  if (box) box.innerHTML = `<p style="color:var(--muted)">Generando informe con el modelo seleccionado…</p>`;
+  try {
+    const res = await fetch(`/api/person/${state.current}/ai-report?model=${encodeURIComponent(model)}&force=true`, { method: "POST" });
+    if (res.status === 401) { window.location.href = "/login"; return; }
+    const data = await res.json();
+    if (data.error) {
+      if (box) box.innerHTML = `<p style="color:var(--muted)">${esc(data.error)}</p>`;
+      toast(data.error, "red");
+      return;
+    }
+    renderAIReport(data);
+    toast(`Informe regenerado con ${data.model}`, "green");
+  } catch (e) {
+    if (box) box.innerHTML = `<p style="color:var(--muted)">No se pudo generar el informe.</p>`;
+    toast("No se pudo generar el informe", "red");
+  } finally {
+    if (btn) { btn.disabled = false; btn.textContent = "🔄 Regenerar informe"; }
+  }
+}
+
+function renderAIReport(data) {
+  const box = $("#aiResult");
+  if (!box) return;
+  state.aiReportExists = true;
+  box.innerHTML = `
+    <div style="font-size:12px;color:var(--muted);margin-bottom:6px">
+      ${data.saved ? '📋 Informe guardado' : '✨ Recién generado'} con <strong>${esc(data.model)}</strong> · ${esc(data.generated_at)}</div>
+    ${data.fallback ? renderFallbackNotice(data) : ""}
+    <div class="ai-report-body">${marked.parse(data.content)}</div>`;
+}
+
 async function autoLoadAIReport() {
-  const model = $("#aiModel") ? $("#aiModel").value : "deepseek";
+  const model = currentAIModel();
   const box = $("#aiResult");
   if (!box) return;
   box.innerHTML = `<p style="color:var(--muted)">Cargando informe…</p>`;
@@ -1058,12 +1111,7 @@ async function autoLoadAIReport() {
       box.innerHTML = `<p style="color:var(--muted)">Sin informe generado aún. Use el botón <strong>AI update</strong> (derecha).</p>`;
       return;
     }
-    state.aiReportExists = true;
-    box.innerHTML = `
-      <div style="font-size:12px;color:var(--muted);margin-bottom:6px">
-        ${data.saved ? '📋 Informe guardado' : '✨ Recién generado'} con <strong>${esc(data.model)}</strong> · ${esc(data.generated_at)}</div>
-      ${data.fallback ? renderFallbackNotice(data) : ""}
-      <div class="ai-report-body">${marked.parse(data.content)}</div>`;
+    renderAIReport(data);
   } catch (e) {
     box.innerHTML = `<p style="color:var(--muted)">No se pudo cargar el informe.</p>`;
   }
