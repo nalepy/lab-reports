@@ -10,6 +10,7 @@ El backend:
 import os
 import time
 import glob
+import hashlib
 import tempfile
 import threading
 import asyncio
@@ -671,6 +672,7 @@ def _store_upload(pid: int, filename: str, content: bytes) -> dict:
     if ext in (".dcm", ".dicom") or _is_dicom_bytes(content):
         return {"ok": False, "file": filename, "status": "error",
                 "message": "DICOM en bruto rechazado: conviértalo a imagen (JPG) desde el navegador."}
+    content_sha = hashlib.sha1(content).hexdigest()
     safe = re.sub(r"[^A-Za-z0-9._-]", "_", filename)
     dest = UPLOAD_DIR / f"p{pid}_{int(time.time())}_{safe}"
     with open(dest, "wb") as f:
@@ -725,9 +727,16 @@ def _store_upload(pid: int, filename: str, content: bytes) -> dict:
         except Exception:  # noqa: BLE001
             pass  # PDF no parseable: queda como adjunto
 
+    # dedup por contenido (mismo paciente): no duplicar un adjunto idéntico
+    existing = db.document_exists(pid, content_sha)
+    if existing is not None:
+        dest.unlink(missing_ok=True)
+        return {"ok": True, "file": filename, "status": "duplicate",
+                "document_id": existing,
+                "message": "Duplicado: ya existe un adjunto idéntico para este paciente."}
     doc_id = db.add_document(pid, filename, str(dest), kind, size,
                              "Estudio subido desde la web.",
-                             study_date=study_date)
+                             study_date=study_date, file_hash=content_sha)
     return {"ok": True, "file": filename, "status": "document",
             "document_id": doc_id,
             "message": f"Guardado como adjunto ({kind})."}

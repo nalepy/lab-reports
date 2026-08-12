@@ -188,6 +188,7 @@ CREATE TABLE IF NOT EXISTS documents (
     size INTEGER DEFAULT 0,
     study_date TEXT DEFAULT '',
     notes TEXT DEFAULT '',
+    file_hash TEXT DEFAULT '',
     uploaded_at TEXT DEFAULT (datetime('now')),
     FOREIGN KEY(person_id) REFERENCES persons(id)
 );
@@ -259,6 +260,7 @@ class DB:
         self.migrate_paths()
         self.migrate_person_metrics()
         self.migrate_study_date()
+        self.migrate_doc_hash()
         self.migrate_analyses()
         self._backfill_study_dates()
         self._prune_orphan_files()
@@ -300,6 +302,15 @@ class DB:
                 "ALTER TABLE documents ADD COLUMN study_date TEXT DEFAULT ''")
             self.conn.commit()
         return "study_date" in cols
+
+    def migrate_doc_hash(self):
+        """Agrega columna file_hash a documents (dedup de adjuntos por contenido)."""
+        cols = {r[1] for r in self.conn.execute("PRAGMA table_info(documents)")}
+        if "file_hash" not in cols:
+            self.conn.execute(
+                "ALTER TABLE documents ADD COLUMN file_hash TEXT DEFAULT ''")
+            self.conn.commit()
+        return "file_hash" in cols
 
     def migrate_analyses(self):
         """Asegura la tabla de análisis de estudios (imágenes/DICOM/PDFs)."""
@@ -925,15 +936,25 @@ class DB:
 
     # ------------------------------------------------------------- documents
 
+    def document_exists(self, pid: int, file_hash: str) -> int | None:
+        """Devuelve el id de un adjunto del MISMO paciente con idéntico
+        contenido (sha1), o None. Dedup por contenido, no por nombre."""
+        if not file_hash:
+            return None
+        row = self.conn.execute(
+            "SELECT id FROM documents WHERE person_id=? AND file_hash=? LIMIT 1",
+            (pid, file_hash)).fetchone()
+        return row["id"] if row else None
+
     def add_document(self, pid: int, orig_filename: str, stored_path: str,
                      kind: str = "other", size: int = 0, notes: str = "",
-                     study_date: str = "") -> int:
+                     study_date: str = "", file_hash: str = "") -> int:
         rel = _relative_path(stored_path)
         now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")  # local, igual que ai_reports
         cur = self.conn.execute(
             "INSERT INTO documents(person_id, orig_filename, stored_path, kind, "
-            "size, study_date, notes, uploaded_at) VALUES(?,?,?,?,?,?,?,?)",
-            (pid, orig_filename, rel, kind, size, study_date, notes, now))
+            "size, study_date, notes, file_hash, uploaded_at) VALUES(?,?,?,?,?,?,?,?,?)",
+            (pid, orig_filename, rel, kind, size, study_date, notes, file_hash, now))
         self.conn.commit()
         return cur.lastrowid
 
