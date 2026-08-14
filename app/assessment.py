@@ -990,7 +990,7 @@ def _recommendations(markers, findings, person, sex) -> list[dict]:
         if f.get("aged"):
             add("yellow",
                 f"{m['label'].upper()} ALTERADO EN ANÁLISIS ANTERIOR "
-                f"({m['value']} {m['unit']}, {m.get('last_date', '')[:10]})",
+                f"({m['value']} {m['unit']}, {(m.get('last_date') or '')[:10]})",
                 m["text"] + " Este resultado tiene más de 12 meses: el estado "
                 "actual puede ser diferente (mejor o peor).",
                 "Repetir este análisis en un control nuevo para confirmar el "

@@ -266,7 +266,7 @@ def _build_prompt(person, assessment, meds, reports, analyses=None) -> list[dict
             f"- {m['label']}: {_fmt_value(m)} -> {status_txt}"
             f"{(' · tendencia: ' + trend) if trend else ''}"
             f" ({m.get('n_measurements', 1)} mediciones)"
-            f", última {m.get('last_date', '')[:10]}")
+            f", última {(m.get('last_date') or '')[:10]}")
 
     systems = "\n".join(
         f"  [{s['system']}] {s['text']}" for s in assessment["systems"])
