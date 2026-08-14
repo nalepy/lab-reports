@@ -1078,6 +1078,119 @@ def _parse_medvital(doc: fitz.Document, report: Report):
     report.notes = full.strip()
 
 
+# ---------------------------------------------------------------- Neo Diagnósticos
+
+_NEO_LABEL_RE = re.compile(
+    r"^(material|m[ée]todo|resultado|intervalo|indeterminado|negativo|positivo|"
+    r"ant[ií]geno|este ensayo|observa|fecha y hora|paciente|c[oó]digo|"
+    r"laboratorio|p[aá]gina|firma digital)", re.I)
+
+
+def _parse_neo(doc: fitz.Document, report: Report):
+    """Formato 'Neo Diagnósticos': cada análisis es un bloque con encabezado
+    (nombre del análisis) seguido de Material/Método/Resultado/Intervalo,
+    sin tabla — muy distinto del resto de laboratorios."""
+    report.lab = "Neo Diagnósticos"
+    full = clean_text("".join(p.get_text() for p in doc))
+    m = re.search(r"paciente\s*:?\s*([^\n]+?)(?:\s+doc\.?\s*n)", full, re.I)
+    if m:
+        report.patient_raw = m.group(1).strip()
+    m = re.search(r"edad\s*:?\s*(\d{1,3})\s*a", full, re.I)
+    if m:
+        report.age = int(m.group(1))
+    m = re.search(r"sexo\s*:?\s*(masculino|femenino|[MF])", full, re.I)
+    if m:
+        report.sex = "F" if m.group(1)[0].upper() == "F" else "M"
+    m = re.search(r"doc\.?\s*n[°º]?\s*:?\s*([\d-]+)", full, re.I)
+    if m:
+        report.doc = m.group(1).strip("- ")
+    report.patient_name = normalize_person_name(report.patient_raw)
+
+    # todas las líneas de todas las páginas, en orden
+    lines: list[str] = []
+    for pno in range(len(doc)):
+        for y, ws in _page_lines(doc, pno, y_tol=1.0):
+            lines.append(clean_text(_line_text((y, ws))))
+
+    # un encabezado de análisis es una línea que NO es una etiqueta conocida
+    # y va seguida inmediatamente de "Material:"
+    heads = [i for i, ln in enumerate(lines)
+             if not _NEO_LABEL_RE.match(ln.strip()) and ln.strip()
+             and i + 1 < len(lines)
+             and lines[i + 1].strip().lower().startswith("material")]
+
+    first_date = None
+    for hi, start in enumerate(heads):
+        name = lines[start].strip()
+        end = heads[hi + 1] if hi + 1 < len(heads) else len(lines)
+        block = lines[start + 1:end]
+        qual = None
+        value = None
+        unit = ""
+        raw_result = ""
+        ref_low = ref_high = None
+        ref_parts: list[str] = []
+        i = 0
+        while i < len(block):
+            line = block[i]
+            low = line.strip().lower()
+            if low.startswith("resultado"):
+                rest = re.sub(r"(?i)^resultado\s*:?\s*", "", line).strip()
+                qm = re.match(r"(negativo|positivo|indeterminado)\b", rest, re.I)
+                if qm:
+                    qual = qm.group(1).capitalize()
+                    rest = rest[qm.end():].strip()
+                nm = re.match(
+                    r"([\d.,]+)\s*([^\d\s]+(?:/[^\d\s]+)?)?\s*(?:([\d.,]+)\s*a\s*([\d.,]+)\s*([^\d\s]+(?:/[^\d\s]+)?)?)?",
+                    rest)
+                if nm and nm.group(1):
+                    value = parse_number(nm.group(1))
+                    raw_result = nm.group(1)
+                    unit = (nm.group(2) or nm.group(5) or "").strip()
+                    if nm.group(3) and nm.group(4):
+                        ref_low = parse_number(nm.group(3))
+                        ref_high = parse_number(nm.group(4))
+                elif not qual:
+                    raw_result = rest
+                # el valor numérico puede venir en la línea SIGUIENTE
+                # (caso cualitativo: "Resultado: Negativo" + "1,4 U/mL ...")
+                if value is None and i + 1 < len(block):
+                    nxt = block[i + 1]
+                    nm2 = re.match(r"([\d.,]+)\s*([^\d\s]+(?:/[^\d\s]+)?)", nxt.strip())
+                    if nm2:
+                        value = parse_number(nm2.group(1))
+                        raw_result = nm2.group(1)
+                        unit = nm2.group(2).strip()
+                        ref_parts.append(nxt[nm2.end():].strip())
+                        i += 1
+            elif re.search(r"negativo|positivo|indeterminado|inferior|superior|"
+                           r"intervalo", low):
+                if not low.startswith("intervalo"):
+                    ref_parts.append(line.strip())
+            elif low.startswith("fecha y hora"):
+                dm = re.search(r"toma\s+de\s+muestra\s*:?\s*([\d/]+\s*-?\s*[\d:]*)", line, re.I)
+                if not dm:
+                    dm = re.search(r"firma\s*:?\s*([\d/]+\s*-?\s*[\d:]*)", line, re.I)
+                if dm:
+                    d = parse_date(dm.group(1))
+                    if d and (first_date is None or d < first_date):
+                        first_date = d
+                        report.date = d
+                        report.date_text = dm.group(1).strip()
+            i += 1
+        if value is None and qual is None:
+            continue
+        report.add_test("GENERAL", name, value, unit, ref_low, ref_high,
+                        " · ".join(p for p in ref_parts if p),
+                        raw_result=raw_result, qual=qual)
+
+    if report.date is None:
+        m = re.search(r"impreso\s*:?\s*([\d/]+\s*-?\s*[\d:]*)", full, re.I)
+        if m:
+            report.date = parse_date(m.group(1))
+            report.date_text = m.group(1).strip()
+
+
 # ---------------------------------------------------------------- dispatch
 
 def detect_format(path: str) -> str:
@@ -1100,6 +1213,8 @@ def detect_format(path: str) -> str:
     if "impedancia" in t or "glucosa oxidasa" in t or "itagua paraguay" in t \
             or "verdejo" in t:
         return "verdejo"
+    if "fecha y hora de firma" in t and "material remitido" in t:
+        return "neo"
     if "neodiagnosticos" in t or "sanacoop" in t or "hemoglobina glicada" in t:
         return "sanacoop"
     return "verdejo"
@@ -1155,6 +1270,10 @@ def parse_pdf(path: str) -> list[Report]:
         elif fmt == "medvital":
             r = Report(fname)
             _parse_medvital(doc, r)
+            reports.append(r)
+        elif fmt == "neo":
+            r = Report(fname)
+            _parse_neo(doc, r)
             reports.append(r)
         else:
             r = Report(fname)

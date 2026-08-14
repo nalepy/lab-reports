@@ -494,6 +494,7 @@ function renderPerson() {
               <div class="r-lab">${esc(r.lab)} ${r.order_code ? "· Orden " + esc(r.order_code) : ""}</div>
               <a class="r-download" href="/api/report/${r.id}/file" target="_blank" rel="noopener"
                  title="Descargar PDF original">⬇️ PDF</a>
+              <button onclick="deleteReport(${r.id})" title="Eliminar informe">🗑</button>
             </div>
             <div class="r-date">${fmtDate(r.date)} · ${esc(r.source_file)}</div>
             <div class="r-sections">${esc(r.sections || "")}</div>
@@ -1462,6 +1463,18 @@ async function deleteDocument(docId) {
   }
 }
 
+async function deleteReport(rid) {
+  if (!confirm("¿Eliminar este informe de laboratorio? El PDF original se conserva en la biblioteca, pero sus valores dejarán de contarse. El informe IA se regenerará.")) return;
+  try {
+    await api(`/api/person/${state.current}/report/${rid}`, { method: "DELETE" });
+    state.detail = await api(`/api/person/${state.current}`);
+    renderPerson();
+    toast("Informe eliminado — regenerando informe IA…", "green");
+  } catch (e) {
+    toast("Error: " + e.message, "red");
+  }
+}
+
 /* ---------------- subir estudios (un selector: archivos y/o carpetas) ---------------- */
 
 let _pendingUpload = [];
@@ -1854,7 +1867,7 @@ async function _runUploadInner(url, boxId, listId, opts) {
       } else if (dedupPatients.length === 1 && dedupPatients[0].pid !== me) {
         navPid = dedupPatients[0].pid;
       }
-      dedupPatients.forEach(p => markAIDirty(p.pid));
+      dedupPatients.forEach(p => { markAIDirty(p.pid); ensureAIReports(p.pid); });
     }
     if (navPid) {
       if (opts.patientless) closeNewStudy();
@@ -1870,7 +1883,7 @@ async function _runUploadInner(url, boxId, listId, opts) {
         state.detail = await api(`/api/person/${state.current}`);
         renderPerson();
         // Análisis de imagen + informe IA: aviso amarillo / botón AI update.
-        if (totalUploaded > 0) markAIDirty(state.current);
+        if (totalUploaded > 0) { markAIDirty(state.current); ensureAIReports(state.current); }
       }
     }
   } catch (e) {

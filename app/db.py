@@ -885,6 +885,20 @@ class DB:
             "SELECT * FROM reports WHERE id=?", (rid,)).fetchone()
         return dict(r) if r else None
 
+    def del_report(self, pid: int, rid: int) -> bool:
+        """Borra un informe de laboratorio (y sus análisis) de un paciente.
+        El PDF original NO se toca en la biblioteca — solo se desvincula."""
+        row = self.conn.execute(
+            "SELECT id FROM reports WHERE id=? AND person_id=?",
+            (rid, pid)).fetchone()
+        if not row:
+            return False
+        self.conn.execute("DELETE FROM tests WHERE report_id=?", (rid,))
+        self.conn.execute(
+            "DELETE FROM reports WHERE id=? AND person_id=?", (rid, pid))
+        self.conn.commit()
+        return True
+
     def reports_for(self, pid: int) -> list[dict]:
         rows = self.conn.execute(
             """SELECT r.*, GROUP_CONCAT(DISTINCT s.section) AS sections

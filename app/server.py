@@ -1235,6 +1235,17 @@ def document_file(doc_id: int):
                         filename=doc["orig_filename"])
 
 
+@app.delete("/api/person/{pid}/report/{rid}")
+def delete_report(pid: int, rid: int):
+    """Borra un informe de laboratorio (y sus análisis) del paciente y
+    regenera el informe IA sin esos datos. El PDF original se conserva en
+    la biblioteca — solo se quita de este paciente."""
+    ok = db.del_report(pid, rid)
+    if ok:
+        ensure_ai_reports(pid)
+    return {"ok": ok}
+
+
 @app.delete("/api/person/{pid}/documents/{doc_id}")
 def delete_document(pid: int, doc_id: int):
     doc = db.document(doc_id)
@@ -1249,6 +1260,8 @@ def delete_document(pid: int, doc_id: int):
             except OSError:
                 pass
     ok = db.del_document(pid, doc_id)
+    if ok:
+        ensure_ai_reports(pid)
     return {"ok": ok}
 
 
