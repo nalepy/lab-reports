@@ -20,31 +20,44 @@ from datetime import datetime
 _ENV_PATH = os.path.join(os.path.dirname(__file__), "..", "data", ".env")
 
 
-def _load_key() -> str:
-    """Fuente única de la API key: data/.env (editable desde la UI)."""
+def _load_env_key(var_name: str) -> str:
+    """Lee una API key desde data/.env (editable desde la UI)."""
     if os.path.exists(_ENV_PATH):
         try:
             with open(_ENV_PATH, "r", encoding="utf-8") as _f:
                 for _line in _f:
                     _line = _line.strip()
-                    if _line.startswith("OPENROUTER_API_KEY="):
+                    if _line.startswith(f"{var_name}="):
                         return _line.split("=", 1)[1].strip().strip('"')
         except OSError:
             pass
     return ""
 
 
+def _load_key() -> str:
+    """API key de OpenRouter (usada para visión y el modelo Opus)."""
+    return _load_env_key("OPENROUTER_API_KEY")
+
+
+def _load_deepseek_key() -> str:
+    """API key nativa de DeepSeek (usada para el modelo DeepSeek)."""
+    return _load_env_key("DEEPSEEK_API_KEY")
+
+
 OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions"
+DEEPSEEK_URL = "https://api.deepseek.com/chat/completions"
 
 # modelos seleccionables por el usuario (solo estos dos)
 MODELS = {
     "deepseek": {
         "label": "DeepSeek V4 Pro",
-        "id": "deepseek/deepseek-v4-pro",
+        "id": "deepseek-chat",
+        "provider": "deepseek",
     },
     "opus": {
         "label": "Opus 4.8",
         "id": "anthropic/claude-opus-4.8",
+        "provider": "openrouter",
     },
 }
 
@@ -115,6 +128,43 @@ def _call_openrouter(model_id: str, messages: list, temperature=0.4) -> str:
         return data["choices"][0]["message"]["content"]
     except (KeyError, IndexError):
         raise AIError(f"Respuesta inesperada de OpenRouter: {data}")
+
+
+def _call_deepseek(model_id: str, messages: list, temperature=0.4) -> str:
+    key = _load_deepseek_key()
+    if not key:
+        raise AIError(
+            "No hay una API key de DeepSeek configurada. Agregue "
+            "DEEPSEEK_API_KEY en data/.env para usar los modelos de IA.")
+    payload = {
+        "model": model_id,
+        "messages": messages,
+        "temperature": temperature,
+        "max_tokens": 8000,
+    }
+    req = urllib.request.Request(
+        DEEPSEEK_URL,
+        data=json.dumps(payload).encode("utf-8"),
+        headers={
+            "Authorization": f"Bearer {key}",
+            "Content-Type": "application/json",
+        },
+        method="POST",
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=180) as resp:
+            data = json.loads(resp.read().decode("utf-8"))
+    except urllib.error.HTTPError as e:
+        body = e.read().decode("utf-8", errors="replace")[:500]
+        raise AIError(f"DeepSeek HTTP {e.code}: {body}")
+    except urllib.error.URLError as e:
+        raise AIError(f"No se pudo conectar con DeepSeek: {e.reason}")
+    except json.JSONDecodeError:
+        raise AIError("Respuesta inválida de DeepSeek.")
+    try:
+        return data["choices"][0]["message"]["content"]
+    except (KeyError, IndexError):
+        raise AIError(f"Respuesta inesperada de DeepSeek: {data}")
 
 
 def _img_data_url(path: str) -> str:
@@ -443,7 +493,11 @@ def generate_report(person, assessment, meds, reports, model_key="deepseek",
     try:
         analyses = db.analyses_for_person(pid) if db is not None else []
         messages = _build_prompt(person, assessment, meds, reports, analyses)
-        content = _call_openrouter(MODELS[model_key]["id"], messages)
+        model_info = MODELS[model_key]
+        if model_info["provider"] == "deepseek":
+            content = _call_deepseek(model_info["id"], messages)
+        else:
+            content = _call_openrouter(model_info["id"], messages)
         report = {
             "model": MODELS[model_key]["label"],
             "model_key": model_key,

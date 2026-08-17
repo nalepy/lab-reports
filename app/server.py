@@ -1402,20 +1402,25 @@ def api_change_password(current: str = Form(...), new: str = Form(...)):
     return resp
 
 
-@app.get("/api/settings")
-def api_get_settings():
-    """Estado de la API key de OpenRouter (nunca devuelve la key completa)."""
-    key_set = False
+def _env_key_set(var_name: str) -> bool:
     env_path = DATA_DIR / ".env"
     if env_path.exists():
         try:
             for line in env_path.read_text(encoding="utf-8").splitlines():
-                if line.strip().startswith("OPENROUTER_API_KEY="):
-                    key_set = bool(line.split("=", 1)[1].strip().strip('"'))
-                    break
+                if line.strip().startswith(f"{var_name}="):
+                    return bool(line.split("=", 1)[1].strip().strip('"'))
         except OSError:
             pass
-    return {"openrouter_key_set": key_set}
+    return False
+
+
+@app.get("/api/settings")
+def api_get_settings():
+    """Estado de las API keys de IA (nunca devuelve la key completa)."""
+    return {
+        "openrouter_key_set": _env_key_set("OPENROUTER_API_KEY"),
+        "deepseek_key_set": _env_key_set("DEEPSEEK_API_KEY"),
+    }
 
 
 @app.post("/api/settings")
@@ -1443,6 +1448,35 @@ def api_save_settings(key: str = Form(...)):
             out.append(line)
     if not replaced:
         out.append(f"OPENROUTER_API_KEY={key}")
+    try:
+        env_path.write_text("\n".join(out) + ("\n" if out else ""), encoding="utf-8")
+    except OSError as e:
+        return JSONResponse({"error": f"No se pudo guardar la key: {e}"},
+                            status_code=500)
+    return {"ok": True, "message": "API key guardada"}
+
+
+@app.post("/api/settings/deepseek")
+def api_save_deepseek_settings(key: str = Form(...)):
+    """Guarda la API key nativa de DeepSeek en data/.env (se aplica sin reiniciar)."""
+    key = key.strip()
+    if not key:
+        return JSONResponse({"error": "Ingrese una API key"}, status_code=400)
+    env_path = DATA_DIR / ".env"
+    env_path.parent.mkdir(parents=True, exist_ok=True)
+    try:
+        lines = env_path.read_text(encoding="utf-8").splitlines() if env_path.exists() else []
+    except OSError:
+        lines = []
+    out, replaced = [], False
+    for line in lines:
+        if line.strip().startswith("DEEPSEEK_API_KEY="):
+            out.append(f"DEEPSEEK_API_KEY={key}")
+            replaced = True
+        else:
+            out.append(line)
+    if not replaced:
+        out.append(f"DEEPSEEK_API_KEY={key}")
     try:
         env_path.write_text("\n".join(out) + ("\n" if out else ""), encoding="utf-8")
     except OSError as e:

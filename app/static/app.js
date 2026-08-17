@@ -1947,6 +1947,12 @@ function toggleSettings() {
         if (note) {
           note.innerHTML = d.openrouter_key_set
             ? `<span style="color:#2e7d32">✓ API key configurada</span>`
+            : `<span style="color:#d32f2f">✗ Sin API key — visión/Opus fallarán</span>`;
+        }
+        const dsNote = $("#deepseekKeyStatus");
+        if (dsNote) {
+          dsNote.innerHTML = d.deepseek_key_set
+            ? `<span style="color:#2e7d32">✓ API key configurada</span>`
             : `<span style="color:#d32f2f">✗ Sin API key — los informes IA fallarán</span>`;
         }
       })
@@ -1969,6 +1975,28 @@ async function saveOpenRouterKey(ev) {
     $("#openrouterKey").value = "";
     msg.innerHTML = `<span style="color:#2e7d32">✓ ${esc(d.message)}</span>`;
     $("#keyStatus").innerHTML = `<span style="color:#2e7d32">✓ API key configurada</span>`;
+    setTimeout(() => { msg.innerHTML = ""; }, 3000);
+  } catch (e) {
+    msg.innerHTML = `<span style="color:#d32f2f">Error: ${esc(e.message)}</span>`;
+  }
+  return false;
+}
+
+async function saveDeepSeekKey(ev) {
+  ev.preventDefault();
+  const key = $("#deepseekKey").value.trim();
+  const msg = $("#deepseekKeyMsg");
+  if (!key) { msg.innerHTML = `<span style="color:#d32f2f">Ingrese una API key.</span>`; return false; }
+  const fd = new FormData();
+  fd.append("key", key);
+  try {
+    const res = await fetch("/api/settings/deepseek", { method: "POST", body: fd });
+    if (res.status === 401) { window.location.href = "/login"; return false; }
+    const d = await res.json();
+    if (!res.ok) { msg.innerHTML = `<span style="color:#d32f2f">${esc(d.error)}</span>`; return false; }
+    $("#deepseekKey").value = "";
+    msg.innerHTML = `<span style="color:#2e7d32">✓ ${esc(d.message)}</span>`;
+    $("#deepseekKeyStatus").innerHTML = `<span style="color:#2e7d32">✓ API key configurada</span>`;
     setTimeout(() => { msg.innerHTML = ""; }, 3000);
   } catch (e) {
     msg.innerHTML = `<span style="color:#d32f2f">Error: ${esc(e.message)}</span>`;
