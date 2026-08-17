@@ -1220,12 +1220,87 @@ def detect_format(path: str) -> str:
     return "verdejo"
 
 
+def _parse_ai(doc: fitz.Document, report: Report) -> bool:
+    """Parsea el PDF con IA (DeepSeek nativo), formato-agnóstico.
+
+    Devuelve True si logró extraer datos usables; False si la extracción
+    falló (sin key, error de red, JSON inválido) y hay que caer al parser
+    regex legacy.
+    """
+    from . import ai_engine
+    full = clean_text("".join(p.get_text() for p in doc))
+    try:
+        data = ai_engine.extract_report_ai(full)
+    except ai_engine.AIError:
+        return False
+    report.lab = str(data.get("lab") or "Laboratorio")
+    report.patient_raw = str(data.get("patient_raw") or "")
+    report.patient_name = normalize_person_name(report.patient_raw)
+    report.doc = str(data.get("doc") or "")
+    age = data.get("age")
+    report.age = int(age) if isinstance(age, (int, float)) else None
+    sex = str(data.get("sex") or "").strip().upper()
+    report.sex = sex if sex in ("M", "F") else ""
+    report.date_text = str(data.get("date_text") or "")
+    report.date = parse_date(report.date_text) or parse_date(str(data.get("date") or ""))
+    if not report.date and data.get("date"):
+        try:
+            report.date = datetime.fromisoformat(str(data["date"])).isoformat()
+        except ValueError:
+            report.date = None
+    report.order_code = str(data.get("order_code") or "")
+    report.doctor = str(data.get("doctor") or "")
+    report.is_document = bool(data.get("is_document"))
+    if report.is_document:
+        report.notes = str(data.get("notes") or "")
+        return bool(report.patient_name or report.notes)
+    n_tests = 0
+    for sec in data.get("sections") or []:
+        sec_name = str(sec.get("name") or "GENERAL")
+        for t in sec.get("tests") or []:
+            name = str(t.get("name") or "").strip()
+            if not name:
+                continue
+            value = t.get("value")
+            value = float(value) if isinstance(value, (int, float)) else None
+            qual = t.get("qual")
+            qual = str(qual) if qual else None
+            if value is None and not qual:
+                continue
+            ref_low = t.get("ref_low")
+            ref_high = t.get("ref_high")
+            report.add_test(
+                sec_name, name, value,
+                unit=str(t.get("unit") or ""),
+                ref_low=float(ref_low) if isinstance(ref_low, (int, float)) else None,
+                ref_high=float(ref_high) if isinstance(ref_high, (int, float)) else None,
+                ref_text=str(t.get("ref_text") or ""),
+                raw_result=str(t.get("raw_result") or ""),
+                qual=qual,
+                method=str(t.get("method") or ""),
+            )
+            n_tests += 1
+    return n_tests > 0
+
+
 def parse_pdf(path: str) -> list[Report]:
-    """Parse a PDF into one or more Reports."""
+    """Parse a PDF into one or more Reports.
+
+    Intenta primero extracción por IA (formato-agnóstica, ver _parse_ai).
+    Si falla (sin API key, error de red, respuesta inválida) o no extrae
+    nada usable, cae al parser regex legacy por laboratorio conocido.
+    """
     try:
         doc = fitz.open(path)
     except Exception:
         return []
+    try:
+        fname = path.split("\\")[-1].split("/")[-1]
+        r = Report(fname)
+        if _parse_ai(doc, r):
+            return [r]
+    except Exception:
+        pass
     try:
         fmt = detect_format(path)
         fname = path.split("\\")[-1].split("/")[-1]

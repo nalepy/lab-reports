@@ -167,6 +167,100 @@ def _call_deepseek(model_id: str, messages: list, temperature=0.4) -> str:
         raise AIError(f"Respuesta inesperada de DeepSeek: {data}")
 
 
+_EXTRACT_SYSTEM = """Eres un extractor de datos estructurados de informes de laboratorio
+clínico en español (Paraguay/LATAM). Recibís el texto crudo de un PDF (puede tener
+columnas mezcladas o saltos de línea raros por la extracción). Tu única tarea es
+devolver un JSON con TODOS los datos del paciente y TODOS los análisis presentes,
+sin inventar nada, sin importar el formato/diseño del laboratorio de origen.
+
+Respondé SOLO con JSON válido, sin texto adicional ni markdown, con esta forma exacta:
+{
+  "lab": "nombre del laboratorio o clínica (si aparece, si no 'Laboratorio')",
+  "patient_raw": "nombre del paciente tal cual aparece",
+  "doc": "número de documento/CI (o '')",
+  "age": 34 o null,
+  "sex": "M" o "F" o "",
+  "date": "YYYY-MM-DD" o "YYYY-MM-DDTHH:MM:SS" (fecha de toma de muestra o del
+    informe; usa la MÁS TEMPRANA si hay varias fechas de distintos análisis),
+  "date_text": "la fecha tal cual aparece en el texto original",
+  "order_code": "código de orden/pedido (o '')",
+  "doctor": "médico solicitante/tratante (o '')",
+  "is_document": false,
+  "sections": [
+    {
+      "name": "nombre de la sección (ej: HEMOGRAMA, QUIMICA, PERFIL LIPIDICO; usa GENERAL si no hay secciones)",
+      "tests": [
+        {
+          "name": "nombre del análisis tal cual aparece",
+          "value": 12.5 o null (SOLO si el resultado es numérico),
+          "unit": "unidad tal cual aparece (o '')",
+          "ref_low": 4.0 o null,
+          "ref_high": 11.0 o null,
+          "ref_text": "texto de referencia tal cual aparece (o '')",
+          "raw_result": "el resultado tal cual aparece en el PDF",
+          "qual": "Negativo"/"Positivo"/"Indeterminado"/etc si el resultado es
+            cualitativo (o null si es numérico),
+          "method": "método usado (o '')"
+        }
+      ]
+    }
+  ]
+}
+
+REGLAS:
+1. Extrae TODOS los análisis/resultados, no solo algunos.
+2. Si el resultado es puramente cualitativo (Negativo/Positivo/Reactivo/etc),
+   value debe ser null y qual debe tener el texto.
+3. Nunca incluyas como "análisis" líneas de contacto, dirección, teléfono,
+   firma, paginado, encabezados de columna, ni el nombre del laboratorio.
+4. Si el documento es un informe narrativo (radiografía, tomografía, resonancia,
+   ecografía, informe médico sin tabla de valores), marca "is_document": true,
+   deja "sections" vacío, e incluí el texto completo del informe en un campo
+   adicional "notes".
+5. Usa null (no strings vacíos) para age si no aparece. Usa '' para strings
+   ausentes.
+6. No inventes valores ni fechas que no estén en el texto."""
+
+
+def extract_report_ai(raw_text: str) -> dict:
+    """Extrae paciente + análisis de un PDF de laboratorio vía DeepSeek nativo.
+
+    Devuelve un dict con la forma descripta en _EXTRACT_SYSTEM. Levanta
+    AIError si no hay key configurada o la llamada/parseo falla.
+    """
+    text = (raw_text or "").strip()
+    if not text:
+        raise AIError("Texto vacío, nada que extraer.")
+    if len(text) > 24000:
+        text = text[:24000]
+    messages = [
+        {"role": "system", "content": _EXTRACT_SYSTEM},
+        {"role": "user", "content": f"Texto del PDF:\n\n{text}"},
+    ]
+    raw = _call_deepseek(MODELS["deepseek"]["id"], messages, temperature=0.0)
+    t = raw.strip()
+    if t.startswith("```"):
+        t = t.strip("`")
+        if t.startswith("json"):
+            t = t[4:]
+        t = t.strip()
+    try:
+        data = json.loads(t)
+    except json.JSONDecodeError:
+        start = t.find("{")
+        end = t.rfind("}")
+        if start != -1 and end > start:
+            try:
+                data = json.loads(t[start:end + 1])
+            except json.JSONDecodeError:
+                raise AIError("Respuesta de extracción no es JSON válido.")
+        else:
+            raise AIError("Respuesta de extracción no es JSON válido.")
+    if not isinstance(data, dict):
+        raise AIError("Respuesta de extracción con forma inesperada.")
+    return data
+
+
 def _img_data_url(path: str) -> str:
     with open(path, "rb") as f:
         raw = f.read()
