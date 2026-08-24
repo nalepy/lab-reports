@@ -261,7 +261,25 @@ def extract_report_ai(raw_text: str) -> dict:
     return data
 
 
+_MAX_IMG_DIM = 2000  # px: lado máximo antes de enviar a visión
+
+
 def _img_data_url(path: str) -> str:
+    # Normaliza a JPEG y reduce tamaño: los BMP/TIFF sin comprimir (ej. RX de
+    # 14 MB) hacen que el payload de OpenRouter supere el límite y devuelva 502.
+    try:
+        from PIL import Image
+        im = Image.open(path)
+        im = im.convert("RGB")
+        if max(im.size) > _MAX_IMG_DIM:
+            im.thumbnail((_MAX_IMG_DIM, _MAX_IMG_DIM))
+        import io
+        buf = io.BytesIO()
+        im.save(buf, format="JPEG", quality=85)
+        raw = buf.getvalue()
+        return f"data:image/jpeg;base64,{base64.b64encode(raw).decode('ascii')}"
+    except Exception:  # noqa: BLE001 — PIL ausente o formato no soportable
+        pass
     with open(path, "rb") as f:
         raw = f.read()
     mime = "image/png"
