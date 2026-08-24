@@ -473,7 +473,8 @@ def _build_prompt(person, assessment, meds, reports, analyses=None) -> list[dict
         if not findings:
             continue
         fname = a.get("orig_filename") or "estudio"
-        head = f"- {fname}:"
+        sdate = (a.get("study_date") or a.get("created_at") or "")[:10] or "sin fecha"
+        head = f"- {fname} (fecha: {sdate}):"
         for f in findings:
             val = ""
             if f.get("value") is not None:
@@ -548,7 +549,15 @@ REGLAS DE ORO:
    (radiografías, tomografías, resonancias, ecografías) que se te entregan:
    menciónalos en la sección de hallazgos y en las acciones recomendadas,
    respetando su severidad (normal/leve/moderado/severo). Si no se entrega
-   ninguno, ignora esta regla."""
+   ninguno, ignora esta regla.
+10. FECHA EN CADA PÁRRAFO (OBLIGATORIO): todo párrafo o afirmación que
+   mencione un resultado, valor, hallazgo o estudio DEBE indicar la fecha de
+   ese hallazgo (formato dd-mm-aaaa), tomada de los datos que se te entregan
+   (cada biomarcador trae su fecha de última medición; cada estudio de imagen
+   trae su fecha). Un valor fuera de rango de hace 2 años puede no ser
+   relevante hoy: si la fecha del hallazgo tiene más de 12 meses, dilo
+   explícitamente y recomienda repetir el estudio. Nunca presentes un hallazgo
+   sin su fecha."""
     # noinspection PyUnresolvedReferences
     user_prompt = f"""PACIENTE: {person['name']}
 INFORMES ANALIZADOS: {n_reports} ({first_date} → {last_date})
@@ -564,7 +573,7 @@ REVISIÓN POR SISTEMAS:
 {systems}
 
 HALLAZGOS (prioridad alta/media):
-{chr(10).join('- [' + f['severity'] + '] ' + f['marker']['label'] + ': ' + (f['stat'] or f['marker']['text']) for f in assessment['findings'][:8])}
+{chr(10).join('- [' + f['severity'] + '] ' + f['marker']['label'] + ': ' + (f['stat'] or f['marker']['text']) + ' (fecha: ' + ((f['marker'].get('last_date') or '')[:10] or 'sin fecha') + ')' for f in assessment['findings'][:8])}
 
 MEDICAMENTOS REGISTRADOS:
 {med_lines}
