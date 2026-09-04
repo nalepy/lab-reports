@@ -812,7 +812,12 @@ def process_studies(pid: int):
     if not p:
         return JSONResponse({"error": "Persona no encontrada"}, status_code=404)
     docs = db.documents_for(pid)
-    parsed_paths = {r.get("stored_path") for r in db.reports_for(pid)}
+    # Solo blindar informes de laboratorio REALES (con tabla de analitos): esos
+    # ya viven en tablas/gráficos. Los informes-documento (is_document=1:
+    # angiotac, ecografía, RMN, informe narrativo sin valores) NO aportan
+    # analitos, así que deben pasar por visión igual que cualquier estudio.
+    parsed_paths = {r.get("stored_path") for r in db.reports_for(pid)
+                    if not r.get("is_document")}
     hint = f"{p.get('name') or 'Paciente'} — estudio clínico"
     model_id = ai_engine.VISION_MODELS[ai_engine.VISION_MODEL]["id"]
     results = []
