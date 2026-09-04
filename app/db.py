@@ -853,10 +853,21 @@ class DB:
         """
         with self._lock:
             if to_pid:
-                for table in ("documents", "reports", "meds", "ai_reports"):
+                for table in ("documents", "reports", "meds"):
                     self.conn.execute(
                         f"UPDATE {table} SET person_id=? WHERE person_id=?",
                         (to_pid, pid))
+                # ai_reports tiene UNIQUE(person_id, model_key): descartar los
+                # del origen cuyo modelo ya existe en el destino (quedará el del
+                # destino; de todos modos se regenera tras la fusión) y mover
+                # solo los modelos que el destino no tenga.
+                self.conn.execute(
+                    "DELETE FROM ai_reports WHERE person_id=? AND model_key IN "
+                    "(SELECT model_key FROM ai_reports WHERE person_id=?)",
+                    (pid, to_pid))
+                self.conn.execute(
+                    "UPDATE ai_reports SET person_id=? WHERE person_id=?",
+                    (to_pid, pid))
             else:
                 rids = [r["id"] for r in self.conn.execute(
                     "SELECT id FROM reports WHERE person_id=?", (pid,))]
