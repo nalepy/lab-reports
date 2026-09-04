@@ -557,9 +557,16 @@ REGLAS DE ORO:
    trae su fecha). Un valor fuera de rango de hace 2 años puede no ser
    relevante hoy: si la fecha del hallazgo tiene más de 12 meses, dilo
    explícitamente y recomienda repetir el estudio. Nunca presentes un hallazgo
-   sin su fecha."""
+   sin su fecha.
+11. FECHA DEL ENCABEZADO: el "Fecha del informe" / "Informe generado el" del
+   encabezado y del pie DEBE ser la FECHA DE GENERACIÓN DE ESTE INFORME (hoy)
+   que se te entrega en los datos, NUNCA la fecha del último estudio o análisis.
+   Las fechas de cada hallazgo son las de su medición (regla 10); la fecha del
+   informe es la de hoy."""
+    today = datetime.now().strftime("%d-%m-%Y")
     # noinspection PyUnresolvedReferences
     user_prompt = f"""PACIENTE: {person['name']}
+FECHA DE GENERACIÓN DE ESTE INFORME (hoy): {today}
 INFORMES ANALIZADOS: {n_reports} ({first_date} → {last_date})
 
 DATOS VITALES DEL PACIENTE:
